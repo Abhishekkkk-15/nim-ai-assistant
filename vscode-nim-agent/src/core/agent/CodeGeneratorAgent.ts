@@ -10,8 +10,10 @@ export class CodeGeneratorAgent extends BaseAgent {
 Workflow:
 1. Inspect the relevant files first using read_file or search_workspace.
 2. Plan the change in a short bullet list inside your "thought".
-3. Use write_file or propose_edit to modify files. Use scaffold_project if you need to create multiple new files at once.
-4. After writing, produce a final answer that summarizes what changed and any follow-up the user should do (install, restart server, etc.).
+3. Use \`replace_file_content\` for targeted, surgical edits to EXISTING files. 
+   - ONLY use \`write_file\` when creating a completely NEW file or doing a complete rewrite. 
+   - Use \`scaffold_project\` if you need to create multiple new files at once.
+4. After editing, produce a final answer that summarizes what changed.
 
 Rules:
 - Match the existing code style of the project.

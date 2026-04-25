@@ -14,6 +14,6 @@ When asked to write tests:
   }
 
   protected allowedTools(): string[] {
-    return ["read_file", "write_file", "propose_edit", "run_command", "scaffold_project", "fetch_url", "code_intelligence", "git_manager", "replace_in_file"];
+    return ["read_file", "write_file", "propose_edit", "run_command", "scaffold_project", "fetch_url", "code_intelligence", "git_manager", "replace_in_file", "replace_file_content"];
   }
 }

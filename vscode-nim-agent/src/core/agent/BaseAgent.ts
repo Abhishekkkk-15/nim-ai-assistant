@@ -11,6 +11,8 @@ export interface AgentRunInput {
   context?: AgentContext;
   modelOverride?: string;
   planMode?: boolean;
+  signal?: AbortSignal;
+  onToken?: (token: string) => void;
   onPermissionRequest?: (tool: string, input: any) => Promise<boolean>;
   onPlanApproval?: (plan: string) => Promise<boolean>;
 }
@@ -268,7 +270,7 @@ IMPORTANT: Plan Mode is ENABLED. You MUST follow this workflow:
 
 <artifacts>
 Store all artifacts in the \`.nim-agent\` directory.
-Use standard markdown formatting. For task.md, use `- [ ]` for incomplete and `- [x]` for complete.
+Use standard markdown formatting. For task.md, use \`- [ ]\` for incomplete and \`- [x]\` for complete.
 </artifacts>
 </planning_mode>`;
     }
@@ -356,6 +358,7 @@ ${ctxBlock}`;
       const parsed = JSON.parse(jsonText) as {
         tool?: string;
         input?: Record<string, unknown>;
+        plan?: string;
         final?: string;
       };
       if (parsed.tool) {

@@ -15,6 +15,7 @@ import { FetchUrlTool } from "./core/tools/FetchUrlTool";
 import { CodeIntelligenceTool } from "./core/tools/CodeIntelligenceTool";
 import { GitManagerTool } from "./core/tools/GitManagerTool";
 import { ReplaceInFileTool } from "./core/tools/ReplaceInFileTool";
+import { ReplaceFileContentTool } from "./core/tools/ReplaceFileContentTool";
 import { ConversationMemory } from "./core/memory/ConversationMemory";
 import { LocalCache } from "./core/memory/LocalCache";
 import { AgentRegistry } from "./core/agent/AgentRegistry";
@@ -70,6 +71,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   toolRegistry.register(new CodeIntelligenceTool());
   toolRegistry.register(new GitManagerTool());
   toolRegistry.register(new ReplaceInFileTool());
+  toolRegistry.register(new ReplaceFileContentTool());
   store.toolRegistry = toolRegistry;
 
   // Agents
