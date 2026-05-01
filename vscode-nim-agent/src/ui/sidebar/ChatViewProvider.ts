@@ -376,76 +376,72 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   button.ghost:hover { opacity: 1; background: var(--bg-darker); border-color: var(--vscode-focusBorder); }
   button.active { background: var(--accent); color: var(--vscode-button-foreground); border-color: transparent; opacity: 1; box-shadow: 0 0 10px var(--accent); }
 
-  #log { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 16px; scroll-behavior: smooth; }
+  /* Timeline Layout */
+  #log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 32px; padding: 24px 20px; scroll-behavior: smooth; }
+  .msg { position: relative; display: flex; flex-direction: column; gap: 8px; }
   
-  .msg { position: relative; max-width: 95%; align-self: flex-start; }
-  .msg.user { align-self: flex-end; }
+  /* User Section */
+  .msg.user { border-left: 2px solid var(--vscode-charts-blue, #3794ff); padding-left: 12px; }
+  .msg.user .who { color: var(--vscode-charts-blue, #3794ff); opacity: 0.7; }
   
-  .msg .who { font-size: 10px; opacity: 0.5; font-weight: 700; text-transform: uppercase; margin-bottom: 4px; }
-  .msg.user .who { text-align: right; color: var(--vscode-textLink-foreground); }
-  .msg.assistant .who { color: var(--vscode-charts-green, #4ec9b0); }
+  /* Assistant Section */
+  .msg.assistant { border-top: 1px solid rgba(255,255,255,0.05); padding-top: 24px; }
+  .msg.assistant:first-child { border-top: none; padding-top: 0; }
+  .msg.assistant .who { color: var(--vscode-charts-purple, #b267e6); opacity: 0.7; }
   
-  .msg .bubble {
-    padding: 10px 14px;
-    border-radius: 12px;
-    background: var(--vscode-editor-background);
-    border: 1px solid var(--vscode-panel-border);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    transition: transform 0.2s;
+  .who { 
+    font-size: 10px; font-weight: 800; text-transform: uppercase; 
+    letter-spacing: 0.08em; display: flex; align-items: center; gap: 8px;
   }
-  .msg.assistant .bubble { border-top-left-radius: 2px; }
-  .msg.user .bubble {
-    background: var(--vscode-button-secondaryBackground, #3a3d41);
-    border: none;
-    border-top-right-radius: 2px;
+
+  .body { font-size: 13.5px; line-height: 1.6; color: var(--vscode-foreground); opacity: 0.95; }
+  .body pre { background: var(--bg-darker); padding: 14px; border-radius: 6px; margin: 16px 0; border: 1px solid rgba(255,255,255,0.06); }
+
+  /* Hierarchical Activity System */
+  .activity-block {
+    margin: 16px 0; border: 1px solid var(--vscode-panel-border);
+    border-radius: 8px; overflow: hidden; background: rgba(0,0,0,0.15);
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   }
+  .activity-block.collapsed .steps-container { display: none; }
+  .activity-header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px; cursor: pointer; background: rgba(255,255,255,0.03);
+    user-select: none; border-bottom: 1px solid transparent;
+  }
+  .activity-block:not(.collapsed) .activity-header { border-bottom-color: rgba(255,255,255,0.05); }
+  .activity-header:hover { background: rgba(255,255,255,0.05); }
   
-  .body { white-space: pre-wrap; word-break: break-word; font-size: 13px; line-height: 1.6; }
+  .activity-icon { font-size: 14px; opacity: 0.8; }
+  .activity-title { flex: 1; font-size: 12px; font-weight: 600; opacity: 0.9; }
+  .activity-duration { font-size: 11px; opacity: 0.5; font-family: var(--vscode-editor-font-family); }
+  .activity-chevron { font-size: 10px; opacity: 0.3; transition: transform 0.2s; }
+  .activity-block:not(.collapsed) .activity-chevron { transform: rotate(90deg); }
+
+  .steps-container { padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; }
   
-  .steps-container { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; }
-  .steps-container:empty { display: none; }
   .step-group {
-    border-radius: var(--radius);
-    background: var(--vscode-sideBar-background);
-    overflow: hidden;
-    animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    border: 1px solid var(--vscode-panel-border);
-    transition: all 0.2s;
+    border-radius: 6px; border: 1px solid transparent;
+    transition: all 0.15s;
   }
-  .step-group:hover { border-color: var(--vscode-focusBorder); background: var(--bg-darker); }
-  @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
   .step-header {
     display: flex; align-items: center; gap: 10px;
-    padding: 8px 12px; cursor: pointer;
-    font-size: 12px; font-weight: 500;
-    user-select: none; transition: background 0.2s;
+    padding: 6px 8px; cursor: pointer; font-size: 12px;
   }
-  .step-header:hover { background: rgba(255,255,255,0.05); }
-  .step-icon { font-size: 14px; flex-shrink: 0; width: 20px; text-align: center; }
-  .step-title { flex: 1; opacity: 0.9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--vscode-foreground); }
-  .step-status { font-size: 10px; opacity: 0.6; flex-shrink: 0; font-family: var(--vscode-editor-font-family); margin-right: 4px; }
-  .step-chevron { font-size: 10px; transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); opacity: 0.4; flex-shrink: 0; }
-  .step-group.expanded { border-color: var(--vscode-focusBorder); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
-  .step-group.expanded .step-chevron { transform: rotate(90deg); opacity: 0.8; }
-  .step-body {
-    display: none; padding: 0 12px 10px 42px;
-    font-size: 12px; opacity: 0.85; line-height: 1.6;
-    border-top: 1px solid rgba(255,255,255,0.03);
-  }
+  .step-header:hover { background: rgba(255,255,255,0.03); border-radius: 4px; }
+  .step-icon { font-size: 12px; width: 16px; text-align: center; opacity: 0.7; }
+  .step-title { flex: 1; opacity: 0.8; }
+  .step-status { font-size: 10px; opacity: 0.4; margin-right: 4px; }
+  .step-chevron { font-size: 9px; opacity: 0.2; transition: transform 0.2s; }
+  .step-group.expanded .step-chevron { transform: rotate(90deg); }
+  
+  .step-body { display: none; padding: 4px 8px 8px 32px; font-size: 11.5px; opacity: 0.7; border-left: 1px solid rgba(255,255,255,0.05); margin-left: 15px; }
   .step-group.expanded .step-body { display: block; }
-  .step-body pre { 
-    margin: 8px 0; padding: 12px; font-size: 11px; 
-    max-height: 250px; overflow-y: auto; 
-    white-space: pre-wrap; word-break: break-all;
-    background: #00000044; border: 1px solid rgba(255,255,255,0.05);
-    border-radius: 4px; font-family: var(--vscode-editor-font-family);
-  }
-  .step-group.thought { border-left: 3px solid var(--vscode-charts-purple, #b267e6); }
-  .step-group.tool { border-left: 3px solid var(--vscode-charts-blue, #3794ff); }
-  .step-group.complete { border-left-color: var(--vscode-charts-green, #4ec9b0); }
-  .step-group.failed { border-left-color: var(--vscode-errorForeground, #f44747); }
-  .step-spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.1); border-top-color: var(--vscode-charts-blue, #3794ff); border-radius: 50%; animation: spin 1s linear infinite; flex-shrink: 0; }
+  
+  .step-spinner { width: 12px; height: 12px; border: 2px solid rgba(255,255,255,0.1); border-top-color: var(--vscode-charts-blue, #3794ff); border-radius: 50%; animation: spin 1s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  .usage { margin-top: 12px; font-size: 10px; opacity: 0.3; text-align: right; font-style: italic; }
 
   .composer {
     display: flex;
@@ -651,8 +647,16 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   let activeAssistantBubble = null;
   let activeStepsContainer = null;
+  let activeActivityBlock = null;
+  let turnStartTime = 0;
+  let turnTimer = null;
   let lastStepGroup = null;
   let currentPermissionRequest = null;
+  let streamingState = { isJson: false, jsonBuffer: '', isFinal: false, finalExtracted: '' };
+
+  function resetStreamingState() {
+    streamingState = { isJson: false, jsonBuffer: '', isFinal: false, finalExtracted: '' };
+  }
 
   function append(role, text) {
     const msg = document.createElement('div');
@@ -660,25 +664,39 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     
     const who = document.createElement('div');
     who.className = 'who';
-    who.textContent = role;
+    who.innerHTML = '<span>' + role + '</span>';
     msg.appendChild(who);
 
-    const bubble = document.createElement('div');
-    bubble.className = 'bubble';
-
-    const sc = document.createElement('div');
-    sc.className = 'steps-container';
-    bubble.appendChild(sc);
-    
     const body = document.createElement('div');
     body.className = 'body';
     body.textContent = text || '';
-    bubble.appendChild(body);
-    msg.appendChild(bubble);
+    msg.appendChild(body);
     
     log.appendChild(msg);
     log.scrollTop = log.scrollHeight;
-    return { body, stepsContainer: sc };
+    return body;
+  }
+
+  function createActivityBlock(container) {
+    const block = document.createElement('div');
+    block.className = 'activity-block';
+    block.innerHTML = \`
+      <div class="activity-header">
+        <span class="activity-icon">⚙️</span>
+        <span class="activity-title">Agent working...</span>
+        <span class="activity-duration">0s</span>
+        <span class="activity-chevron">▸</span>
+      </div>
+      <div class="steps-container"></div>
+    \`;
+    block.querySelector('.activity-header').onclick = () => block.classList.toggle('collapsed');
+    container.appendChild(block);
+    return { 
+      block, 
+      stepsContainer: block.querySelector('.steps-container'),
+      durationEl: block.querySelector('.activity-duration'),
+      titleEl: block.querySelector('.activity-title')
+    };
   }
 
   function formatMarkdown(text) {
@@ -716,7 +734,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   function appendStep(step) {
-    const container = activeStepsContainer || log;
+    if (!activeStepsContainer) return;
+    const container = activeStepsContainer;
 
     if (step.type === 'thought') {
       const g = document.createElement('div');
@@ -726,7 +745,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       body.className = 'step-body';
       body.textContent = step.payload;
       g.appendChild(body);
-      g.querySelector('.step-header').onclick = () => g.classList.toggle('expanded');
+      g.querySelector('.step-header').onclick = (e) => { e.stopPropagation(); g.classList.toggle('expanded'); };
       container.appendChild(g);
       lastStepGroup = null;
       log.scrollTop = log.scrollHeight;
@@ -742,7 +761,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       const body = document.createElement('div');
       body.className = 'step-body';
       g.appendChild(body);
-      g.querySelector('.step-header').onclick = () => g.classList.toggle('expanded');
+      g.querySelector('.step-header').onclick = (e) => { e.stopPropagation(); g.classList.toggle('expanded'); };
       container.appendChild(g);
       lastStepGroup = g;
       log.scrollTop = log.scrollHeight;
@@ -891,32 +910,93 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         break;
       }
       case 'user': {
-        const { body: ub } = append('user', '');
+        const ub = append('user', '');
         ub.innerHTML = formatMarkdown(m.payload);
         activeAssistantBubble = null;
         activeStepsContainer = null;
+        activeActivityBlock = null;
         lastStepGroup = null;
+        resetStreamingState();
         break;
       }
       case 'assistant_start': {
-        const { body, stepsContainer } = append('assistant', '');
-        activeAssistantBubble = body;
-        activeStepsContainer = stepsContainer;
+        const ab = append('assistant', '');
+        activeAssistantBubble = ab;
+        
+        // Start Activity Block
+        const act = createActivityBlock(ab.parentElement);
+        activeActivityBlock = act;
+        activeStepsContainer = act.stepsContainer;
+        
+        turnStartTime = Date.now();
+        turnTimer = setInterval(() => {
+          const s = Math.floor((Date.now() - turnStartTime) / 1000);
+          act.durationEl.textContent = s + 's';
+        }, 1000);
+
         lastStepGroup = null;
+        resetStreamingState();
         cancelBtn.style.display = 'inline-block';
         working.style.display = 'flex';
         break;
       }
-      case 'assistant_token':
+      case 'assistant_token': {
         if (!activeAssistantBubble) {
-          const { body, stepsContainer } = append('assistant', '');
-          activeAssistantBubble = body;
-          activeStepsContainer = stepsContainer;
+          const ab = append('assistant', '');
+          activeAssistantBubble = ab;
+          const act = createActivityBlock(ab.parentElement);
+          activeActivityBlock = act;
+          activeStepsContainer = act.stepsContainer;
         }
-        activeAssistantBubble.textContent += m.payload;
+        
+        const token = m.payload;
+        streamingState.jsonBuffer += token;
+        
+        // Detect start of JSON block (cumulative)
+        if (!streamingState.isJson && streamingState.jsonBuffer.includes('\\\`\\\`\\\`json')) {
+          streamingState.isJson = true;
+          // Trim the bubble text to remove the opening fence that might have leaked
+          activeAssistantBubble.textContent = activeAssistantBubble.textContent.replace(/\\\`*$/, '').trim();
+        }
+        
+        if (streamingState.isJson) {
+          // Detect final answer streaming
+          if (!streamingState.isFinal && streamingState.jsonBuffer.includes('"final"')) {
+            streamingState.isFinal = true;
+          }
+          if (streamingState.isFinal) {
+            const match = streamingState.jsonBuffer.match(/"final":\s*"([^"]*)/);
+            if (match && match[1]) {
+              const newContent = match[1].replace(/\\\\n/g, '\\n');
+              const delta = newContent.slice(streamingState.finalExtracted.length);
+              if (delta) {
+                activeAssistantBubble.textContent += delta;
+                streamingState.finalExtracted = newContent;
+              }
+            }
+          }
+        } else {
+          activeAssistantBubble.textContent += token;
+        }
+        
+        // Detect end of JSON block
+        if (streamingState.isJson && token.includes('\\\`\\\`\\\`')) {
+          const lastFence = streamingState.jsonBuffer.lastIndexOf('\\\`\\\`\\\`json');
+          if (streamingState.jsonBuffer.lastIndexOf('\\\`\\\`\\\`') > lastFence + 7) {
+            streamingState.isJson = false;
+          }
+        }
+        
         log.scrollTop = log.scrollHeight;
         break;
+      }
       case 'assistant_end':
+        if (turnTimer) clearInterval(turnTimer);
+        if (activeActivityBlock) {
+          const duration = Math.floor((Date.now() - turnStartTime) / 1000);
+          activeActivityBlock.titleEl.textContent = 'Worked for ' + duration + 's';
+          activeActivityBlock.block.classList.add('collapsed');
+        }
         if (activeAssistantBubble && m.payload) {
           if (m.payload.content) {
             activeAssistantBubble.innerHTML = formatMarkdown(m.payload.content);
@@ -931,13 +1011,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         }
         activeAssistantBubble = null;
         activeStepsContainer = null;
+        activeActivityBlock = null;
         lastStepGroup = null;
+        resetStreamingState();
         cancelBtn.style.display = 'none';
         working.style.display = 'none';
         break;
       case 'step': {
         if (m.payload.type === 'tool_call' && activeAssistantBubble) {
-          activeAssistantBubble.textContent = '';
+          // Robust surgical cleaning of any JSON fragments or fences
+          activeAssistantBubble.textContent = activeAssistantBubble.textContent
+            .replace(/\\\`\\\`\\\`json[\s\S]*$/, '')
+            .replace(/\\\`\\\`\\\`[\s\S]*$/, '')
+            .replace(/\{[\s\S]*$/, '')
+            .trim();
         }
         appendStep(m.payload);
         break;
