@@ -1,7 +1,7 @@
 import * as vscode from "vscode";
 import type { AgentContext } from "../../core/agent/BaseAgent";
 
-const MAX_FILE_BYTES = 24_000;
+const MAX_FILE_BYTES = 64_000;
 
 /**
  * Snapshot the user's active editor + selection + a tiny workspace summary.
