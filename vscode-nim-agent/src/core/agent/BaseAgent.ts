@@ -351,7 +351,8 @@ ${tools}
 ${allowedNote}
 ${planInstruction}
 
-To call tools, reply with one or more fenced JSON blocks. You may call multiple tools in parallel if it helps you achieve the goal faster (e.g. reading multiple files at once).
+To call tools, you MUST reply with one or more fenced JSON blocks.
+IMPORTANT: NEVER use XML tags like <run_command> or <write_file>. NEVER use any other format. If you use the wrong format, the tool will NOT execute and the user will see nothing.
 \`\`\`json
 { "tool": "<tool_name>", "input": { ... } }
 \`\`\`
@@ -362,6 +363,7 @@ To produce the final answer for the user, reply with EXACTLY one fenced JSON blo
 \`\`\`
 
 You may include a short natural-language thought BEFORE the JSON block if it helps you reason. Do not include both a tool call and a final answer in the same reply.
+Only one JSON block per response is preferred unless you are calling tools in parallel.
 
 Editor context:
 ${ctxBlock}`;
@@ -449,6 +451,25 @@ ${ctxBlock}`;
     }
 
     if (actions.length === 0) {
+      // Fallback 1: Look for XML-like tags <tool_name>{...}</tool_name>
+      const tagRegex = /<(\w+)>\s*([\s\S]*?)\s*<\/\1>/gi;
+      let tagMatch;
+      while ((tagMatch = tagRegex.exec(text)) !== null) {
+        const toolName = tagMatch[1];
+        const payload = tagMatch[2].trim();
+        try {
+          const raw = JSON.parse(payload);
+          // If it's just the input, wrap it. If it's already a tool call, normalize it.
+          const normalized = raw.tool ? this.normalizeAction(raw) : { tool: { name: toolName, input: raw } };
+          if (normalized) {
+            actions.push(normalized);
+            if (thought === undefined) thought = text.slice(0, tagMatch.index).trim();
+          }
+        } catch { /* skip */ }
+      }
+    }
+
+    if (actions.length === 0) {
       const bare = this.findBareJson(text);
       if (bare) {
         try {
@@ -471,6 +492,17 @@ ${ctxBlock}`;
     if (raw.tool && typeof raw.tool === "string") {
       return { tool: { name: raw.tool, input: raw.input || {} } };
     }
+    
+    // Fallback: If the object has a 'command' field but no 'tool', assume 'run_command'
+    if (raw.command && !raw.tool) {
+      return { tool: { name: "run_command", input: raw } };
+    }
+
+    // Fallback: If the object has a 'path' and 'content' but no 'tool', assume 'write_file'
+    if (raw.path && raw.content && !raw.tool) {
+      return { tool: { name: "write_file", input: raw } };
+    }
+
     if (raw.plan) return { plan: raw.plan };
     if (raw.final) return { final: raw.final };
     if (raw.thought && !raw.tool && !raw.final) return { thought: raw.thought };

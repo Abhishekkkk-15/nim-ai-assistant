@@ -87,7 +87,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private attachedFiles = new Set<string>();
   private attachedImages: AttachedImage[] = [];
   private lastProposedCode?: string;
-  private permissionResolver?: (allowed: boolean) => void;
+  private permissionQueue: Array<(allowed: boolean) => void> = [];
   private editTracker = new EditTracker();
   private uiDesigner!: UiDesigner;
   private currentDesignAbort: AbortController | undefined;
@@ -212,7 +212,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         return;
       case "toggleAutoPermit": this.autoPermit = !this.autoPermit; this.refreshState(); return;
       case "togglePlanMode": this.planMode = !this.planMode; this.refreshState(); return;
-      case "permissionResponse": this.permissionResolver?.(!!msg.allowed); this.permissionResolver = undefined; return;
+      case "permissionResponse": {
+        const resolver = this.permissionQueue.shift();
+        if (resolver) resolver(!!msg.allowed);
+        return;
+      }
       case "pinFile": if (msg.path) await this.store.contextManager.pinFile(msg.path); this.refreshState(); return;
       case "unpinFile": if (msg.path) await this.store.contextManager.unpin(msg.path); this.refreshState(); return;
       case "detachFile": if (msg.path) this.attachedFiles.delete(msg.path); this.refreshState(); return;
@@ -318,8 +322,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   private async runPrompt(prompt: string, agentRole?: AgentRole): Promise<void> {
-    // Reset edit tracker for this user-prompt cycle (covers handoffs too).
+    // Reset edit tracker and clear any stale permission callbacks from a previous (possibly cancelled) run.
     this.editTracker.clear();
+    this.permissionQueue = [];
 
     // Snapshot + clear attached images: they apply to this single send.
     const imagesForRun: AgentImageInput[] = this.attachedImages.map(i => ({ url: i.url }));
@@ -353,7 +358,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           onPermissionRequest: async (tool, input) => {
             if (this.autoPermit) return true;
             this.post({ type: "permission_request", payload: { tool, input } });
-            return new Promise(res => this.permissionResolver = res);
+            return new Promise<boolean>(res => this.permissionQueue.push(res));
           }
         });
 
@@ -378,7 +383,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
               context: await collectEditorContext(Array.from(this.attachedFiles)),
               planMode: false, // Parallel tasks usually execute directly
               signal: this.currentAbort?.signal,
-              onStep: s => this.handleAgentStep(s)
+              onStep: s => this.handleAgentStep(s),
+              onPermissionRequest: async (tool, input) => {
+                if (this.autoPermit) return true;
+                this.post({ type: "permission_request", payload: { tool, input } });
+                return new Promise<boolean>(res => this.permissionQueue.push(res));
+              }
             });
             
             this.post({ type: "info", payload: `Parallel Task Finished: ${item.to}` });
