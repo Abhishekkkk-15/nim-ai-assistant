@@ -424,7 +424,7 @@ const DesignerView = (function () {
   $('#designForm').addEventListener('submit', (e) => {
     e.preventDefault();
     const features = String($('#designFeatures').value || '')
-      .split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+      .split(/\\r?\\n/).map(s => s.trim()).filter(Boolean);
     const spec = {
       appType: $('#designAppType').value,
       style: $('#designStyle').value,
