@@ -109,6 +109,7 @@ export abstract class BaseAgent {
     let totalPromptTokens = 0;
     let totalCompletionTokens = 0;
 
+    let consecutiveNoJson = 0;
     for (let step = 0; step < maxSteps; step++) {
       let assistantText = "";
       let usage: any = undefined;
@@ -216,6 +217,27 @@ export abstract class BaseAgent {
         finalContent = action.final;
         steps.push({ type: "final", payload: finalContent });
         break;
+      }
+
+      // If no JSON block but we've had thoughts, and it looks like a tool call was intended
+      if (!action.tool && !action.plan && !action.final) {
+        const looksLikeTool = assistantText.toLowerCase().includes("tool") || 
+                             assistantText.toLowerCase().includes("read_file") ||
+                             assistantText.toLowerCase().includes("write_file") ||
+                             assistantText.toLowerCase().includes("replace");
+        
+        if (looksLikeTool && consecutiveNoJson < 2) {
+          consecutiveNoJson++;
+          messages.push({ role: "user", content: "It looks like you intended to call a tool but didn't provide the JSON block. Please provide exactly one JSON block for your next action." });
+          continue;
+        }
+      }
+      
+      consecutiveNoJson = 0;
+      if (!action.tool && !action.plan) {
+         // If we reached here, it's either a valid final answer or we should stop
+         finalContent = action.final || assistantText;
+         break;
       }
     }
 
