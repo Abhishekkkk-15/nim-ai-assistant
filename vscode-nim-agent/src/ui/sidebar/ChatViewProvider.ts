@@ -242,6 +242,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         planMode: this.planMode,
         signal: this.currentAbort.signal,
         onToken: (t) => this.post({ type: "assistant_token", payload: t }),
+        onStep: (step) => {
+          if (step.type === "tool_call" || step.type === "tool_result" || step.type === "thought") {
+            this.post({ type: "step", payload: step });
+          }
+        },
         onPermissionRequest: async (tool, input) => {
           if (this.autoPermit) return true;
           this.post({ type: "permission_request", payload: { tool, input } });
@@ -256,12 +261,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           });
         }
       });
-      for (const step of result.steps) {
-        if (step.type === "tool_call" || step.type === "tool_result") {
-          // In pretty mode, we might want to skip these or post them differently
-          this.post({ type: "step", payload: step });
-        }
-      }
       this.post({ type: "assistant_end", payload: { content: result.content } });
     } catch (err) {
       this.post({ type: "error", payload: err instanceof Error ? err.message : String(err) });
@@ -841,9 +840,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         cancelBtn.style.display = 'none';
         working.style.display = 'none';
         break;
-      case 'step':
+      case 'step': {
+        // When a tool_call step arrives, clear the raw JSON from the streaming bubble
+        if (m.payload.type === 'tool_call' && activeAssistantBubble) {
+          activeAssistantBubble.textContent = '';
+        }
         appendStep(m.payload);
         break;
+      }
       case 'permission_request':
         working.style.display = 'none';
         showPrompt(\`Agent wants to use "\${m.payload.tool}". Allow?\`, 'permission', m.payload);

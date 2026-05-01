@@ -29,10 +29,11 @@ export class TerminalExecutorTool extends BaseTool {
       return { ok: false, output: "Missing 'command' argument." };
     }
 
-    // Still show in terminal for user visibility
+    // Show in terminal for user visibility
     const terminal = this.acquireTerminal(cwd);
     terminal.show(true);
-    terminal.sendText(`# Running: ${command}`, true);
+    terminal.sendText(`echo "[NIM Agent] Running: ${command.replace(/"/g, '\\"')}"`, true);
+    terminal.sendText(command, true);
 
     return new Promise<ToolResult>((resolve) => {
       const workspaceRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath;

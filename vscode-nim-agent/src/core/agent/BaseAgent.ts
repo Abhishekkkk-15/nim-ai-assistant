@@ -13,6 +13,7 @@ export interface AgentRunInput {
   planMode?: boolean;
   signal?: AbortSignal;
   onToken?: (token: string) => void;
+  onStep?: (step: AgentStep) => void;
   onPermissionRequest?: (tool: string, input: any) => Promise<boolean>;
   onPlanApproval?: (plan: string) => Promise<boolean>;
 }
@@ -143,7 +144,9 @@ export abstract class BaseAgent {
       const action = this.parseAction(assistantText);
 
       if (action.thought) {
-        steps.push({ type: "thought", payload: action.thought });
+        const thoughtStep: AgentStep = { type: "thought", payload: action.thought };
+        steps.push(thoughtStep);
+        input.onStep?.(thoughtStep);
       }
 
       if (action.tool) {
@@ -166,10 +169,12 @@ export abstract class BaseAgent {
           }
         }
 
-        steps.push({ type: "tool_call", name: action.tool.name, payload: JSON.stringify(action.tool.input) });
+        const toolCallStep: AgentStep = { type: "tool_call", name: action.tool.name, payload: JSON.stringify(action.tool.input) };
+        steps.push(toolCallStep);
+        input.onStep?.(toolCallStep);
         const result = await this.store.toolRegistry.execute(action.tool.name, action.tool.input);
         
-        if (result.ok && (action.tool.name === "write_file" || action.tool.name === "replace_in_file")) {
+        if (result.ok && (action.tool.name === "write_file" || action.tool.name === "replace_in_file" || action.tool.name === "replace_file_content")) {
           const fp = action.tool.input.path as string | undefined;
           if (fp && fp.includes(".nim-agent")) {
             try {
@@ -182,7 +187,9 @@ export abstract class BaseAgent {
           }
         }
 
-        steps.push({ type: "tool_result", name: action.tool.name, payload: result.output });
+        const toolResultStep: AgentStep = { type: "tool_result", name: action.tool.name, payload: result.output };
+        steps.push(toolResultStep);
+        input.onStep?.(toolResultStep);
         messages.push({ role: "user", content: this.toolResultPrompt(action.tool.name, result) });
         if (result.terminal) {
           finalContent = result.output;
