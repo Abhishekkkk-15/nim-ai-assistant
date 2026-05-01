@@ -1,0 +1,90 @@
+🧩 PART 1 — FIX MODEL SELECTION BUG
+❗ Problem
+
+Currently:
+
+User selects a model from dropdown
+Clicks "Send"
+The model resets back to default instead of using selected model 
+🎨 PART 2 — AI UI DESIGN GENERATOR (NEW FEATURE)
+🎯 Goal
+
+Add a new feature where the extension can generate high-quality UI designs (like Figma-style) based on user input.
+
+This is NOT basic UI — it must feel like professional product design output.
+
+🧠 Feature Overview
+
+Add a new button in UI:
+
+Similar to existing:
+"Plan"
+"Auto"
+New button:
+👉 "Design UI"
+⚙️ Behavior
+
+When user clicks "Design UI":
+
+Ask user for:
+App type (web / mobile / dashboard / SaaS)
+Style (modern / minimal / dark / etc.)
+Features required
+Send structured prompt to LLM
+LLM generates:
+Layout structure
+Component hierarchy
+Design system (colors, spacing, typography)
+Screens (multiple if needed)
+🤖 Model Selection
+Automatically use a free NVIDIA NIM model
+Override current model ONLY for this feature
+Allow fallback if model fails
+🖼️ Output Format
+
+Generate UI design in structured format:
+
+JSON-based layout OR
+JSX / HTML preview OR
+Figma-like schema
+
+Must include:
+
+Sections
+Components
+Styles
+🎯 UI DISPLAY
+
+Show result inside extension:
+
+Render preview
+Scrollable layout
+Clearly separated sections
+🔥 BONUS FEATURES (IMPLEMENT IF POSSIBLE)
+"Export to Code"
+Convert design → React / HTML
+"Edit Design"
+Allow user to refine prompt
+"Component Tree View"
+Sidebar showing UI hierarchy
+"Design Variations"
+Generate 2–3 alternatives
+🏗️ ARCHITECTURE NOTES
+Keep feature modular
+Add new module:
+src/features/ui-designer/
+Do NOT break existing agent system
+⚠️ RULES
+Do NOT rewrite entire app
+Do NOT break existing chat flow
+Keep code clean and modular
+Use TypeScript properly
+📦 OUTPUT REQUIRED
+Bug fix implementation
+Updated model state logic
+New "Design UI" feature
+UI components for design preview
+Example generated UI response
+Integration with NIM API
+
+Start with fixing the model persistence bug, then implement the UI Designer feature step-by-step.

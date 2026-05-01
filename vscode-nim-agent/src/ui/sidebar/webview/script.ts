@@ -246,6 +246,206 @@ const EditsPanel = {
 };
 
 /* ============================================================
+   DesignerView — UI Designer overlay (form, progress, result)
+   ============================================================ */
+const DesignerView = (function () {
+  let lastResult = null; // { document, variations, modelUsed, rawJson }
+  let activeDoc = null;
+
+  function open() {
+    Overlay.open('designOverlay');
+    showSection('form');
+  }
+  function showSection(which) {
+    $('#designForm').style.display = which === 'form' ? '' : 'none';
+    $('#designProgress').style.display = which === 'progress' ? '' : 'none';
+    $('#designError').style.display = which === 'error' ? '' : 'none';
+    $('#designResult').style.display = which === 'result' ? '' : 'none';
+  }
+  function progress(msg) {
+    showSection('progress');
+    $('#designProgressMsg').textContent = msg || 'Generating design\u2026';
+  }
+  function error(msg) {
+    showSection('error');
+    $('#designError').textContent = 'Design generation failed: ' + (msg || 'unknown error');
+  }
+  function setResult(payload) {
+    lastResult = payload || {};
+    const sel = $('#designVariantSel');
+    const allDocs = [lastResult.document].concat(lastResult.variations || []).filter(Boolean);
+    if (allDocs.length > 1) {
+      sel.style.display = '';
+      sel.innerHTML = allDocs.map((d, i) =>
+        '<option value="' + i + '">' + (i === 0 ? 'Primary' : 'Variation ' + i) + ' \u2014 ' + escapeHtml(d.meta?.name || 'Untitled') + '</option>'
+      ).join('');
+      sel.value = '0';
+    } else {
+      sel.style.display = 'none';
+    }
+    setActiveIndex(0);
+    showSection('result');
+  }
+  function setActiveIndex(i) {
+    if (!lastResult) return;
+    const docs = [lastResult.document].concat(lastResult.variations || []);
+    activeDoc = docs[i] || docs[0];
+    renderActive();
+  }
+  function renderActive() {
+    if (!activeDoc) return;
+    renderVisual(activeDoc);
+    renderTree(activeDoc);
+    renderJson(activeDoc);
+  }
+  function renderVisual(doc) {
+    const root = $('#designTabVisual');
+    const meta = doc.meta || {};
+    const ds = doc.designSystem || {};
+    const colors = ds.colors || [];
+    const typo = ds.typography || [];
+    const spacing = ds.spacing || [];
+    const radii = ds.radii || [];
+    const screens = doc.screens || [];
+
+    let html = '';
+    html += '<div class="design-meta">';
+    html += '<div class="design-name">' + escapeHtml(meta.name || 'Untitled') + '</div>';
+    html += '<div class="design-pills">';
+    html += '<span class="design-pill">' + escapeHtml(meta.appType || '') + '</span>';
+    html += '<span class="design-pill">' + escapeHtml(meta.style || '') + '</span>';
+    html += '<span class="design-pill subtle">model: ' + escapeHtml(lastResult?.modelUsed || '') + '</span>';
+    html += '</div>';
+    if (meta.summary) html += '<div class="design-summary">' + escapeHtml(meta.summary) + '</div>';
+    html += '</div>';
+
+    if (colors.length) {
+      html += '<div class="design-section"><div class="design-section-title">Colors</div><div class="swatch-grid">';
+      for (const c of colors) {
+        html += '<div class="swatch"><span class="swatch-chip" style="background:' + escapeHtml(c.value) + '"></span>' +
+          '<div class="swatch-meta"><div class="swatch-name">' + escapeHtml(c.name) + '</div>' +
+          '<div class="swatch-value">' + escapeHtml(c.value) + '</div>' +
+          (c.usage ? '<div class="swatch-usage">' + escapeHtml(c.usage) + '</div>' : '') +
+          '</div></div>';
+      }
+      html += '</div></div>';
+    }
+    if (typo.length) {
+      html += '<div class="design-section"><div class="design-section-title">Typography</div><div class="typo-grid">';
+      for (const t of typo) {
+        html += '<div class="typo-row"><span class="typo-role">' + escapeHtml(t.role) + '</span>' +
+          '<span class="typo-sample" style="font-family:' + escapeHtml(t.family) + '; font-weight:' + escapeHtml(t.weight || '400') + '">' +
+          escapeHtml(t.family) + (t.size ? ' \u00B7 ' + escapeHtml(t.size) : '') + '</span></div>';
+      }
+      html += '</div></div>';
+    }
+    if (spacing.length || radii.length) {
+      html += '<div class="design-section"><div class="design-section-title">Spacing &amp; radii</div><div class="token-grid">';
+      for (const s of spacing) html += '<div class="token-chip"><span class="token-key">' + escapeHtml(s.token) + '</span><span class="token-val">' + escapeHtml(s.value) + '</span></div>';
+      for (const r of radii) html += '<div class="token-chip"><span class="token-key">r/' + escapeHtml(r.token) + '</span><span class="token-val">' + escapeHtml(r.value) + '</span></div>';
+      html += '</div></div>';
+    }
+
+    if (screens.length) {
+      html += '<div class="design-section"><div class="design-section-title">Screens (' + screens.length + ')</div>';
+      for (const s of screens) {
+        html += '<details class="screen-card" open><summary>' + escapeHtml(s.name) + '</summary>';
+        if (s.description) html += '<div class="screen-desc">' + escapeHtml(s.description) + '</div>';
+        for (const sec of (s.sections || [])) {
+          html += '<div class="section-card"><div class="section-name">' + escapeHtml(sec.name) + '</div>';
+          if (sec.description) html += '<div class="section-desc">' + escapeHtml(sec.description) + '</div>';
+          html += '<div class="section-components">';
+          for (const c of (sec.components || [])) html += renderComponentCard(c);
+          html += '</div></div>';
+        }
+        html += '</details>';
+      }
+      html += '</div>';
+    }
+    root.innerHTML = html;
+  }
+  function renderComponentCard(c) {
+    const props = c.props ? Object.entries(c.props).map(([k, v]) =>
+      '<span class="prop"><span class="prop-key">' + escapeHtml(k) + '</span>=<span class="prop-val">' + escapeHtml(formatPropVal(v)) + '</span></span>'
+    ).join('') : '';
+    let html = '<div class="component-card">' +
+      '<div class="component-head"><span class="component-type">' + escapeHtml(c.type) + '</span>' +
+      (c.name ? '<span class="component-name">' + escapeHtml(c.name) + '</span>' : '') + '</div>';
+    if (props) html += '<div class="component-props">' + props + '</div>';
+    if (c.children && c.children.length) {
+      html += '<div class="component-children">';
+      for (const ch of c.children) html += renderComponentCard(ch);
+      html += '</div>';
+    }
+    return html + '</div>';
+  }
+  function formatPropVal(v) {
+    if (v == null) return String(v);
+    if (typeof v === 'string') return v;
+    try { return JSON.stringify(v); } catch { return String(v); }
+  }
+  function renderTree(doc) {
+    const root = $('#designTabTree');
+    let html = '<ul class="tree-root">';
+    for (const s of (doc.screens || [])) {
+      html += '<li><span class="tree-screen">\u{1F5A5}\uFE0F ' + escapeHtml(s.name) + '</span><ul>';
+      for (const sec of (s.sections || [])) {
+        html += '<li><span class="tree-section">\u25A2 ' + escapeHtml(sec.name) + '</span><ul>';
+        for (const c of (sec.components || [])) html += treeNode(c);
+        html += '</ul></li>';
+      }
+      html += '</ul></li>';
+    }
+    html += '</ul>';
+    root.innerHTML = html;
+  }
+  function treeNode(c) {
+    let html = '<li><span class="tree-component">\u25CB ' + escapeHtml(c.type) +
+      (c.name ? ' \u2022 ' + escapeHtml(c.name) : '') + '</span>';
+    if (c.children && c.children.length) {
+      html += '<ul>';
+      for (const ch of c.children) html += treeNode(ch);
+      html += '</ul>';
+    }
+    return html + '</li>';
+  }
+  function renderJson(doc) {
+    const root = $('#designTabJson');
+    root.innerHTML = '<pre class="design-json">' + escapeHtml(JSON.stringify(doc, null, 2)) + '</pre>';
+  }
+  function activateTab(name) {
+    $$('#designResult .tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    $('#designTabVisual').style.display = name === 'visual' ? '' : 'none';
+    $('#designTabTree').style.display = name === 'tree' ? '' : 'none';
+    $('#designTabJson').style.display = name === 'json' ? '' : 'none';
+  }
+
+  // Wire form events.
+  $('#designForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const features = String($('#designFeatures').value || '')
+      .split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    const spec = {
+      appType: $('#designAppType').value,
+      style: $('#designStyle').value,
+      features,
+      notes: $('#designNotes').value || '',
+      variations: parseInt($('#designVariations').value || '1', 10),
+    };
+    progress('Generating design with NIM\u2026');
+    vscode.postMessage({ type: 'runDesign', designSpec: spec });
+  });
+  $('#designNewBtn').addEventListener('click', () => showSection('form'));
+  $('#designVariantSel').addEventListener('change', (e) => setActiveIndex(parseInt(e.target.value, 10) || 0));
+  $('#designResult').addEventListener('click', (e) => {
+    const t = e.target;
+    if (t.classList && t.classList.contains('tab-btn')) activateTab(t.dataset.tab);
+  });
+
+  return { open, progress, error, setResult };
+})();
+
+/* ============================================================
    MessageView — user / assistant message factory
    ============================================================ */
 const MessageView = {
@@ -526,6 +726,8 @@ $('#analyticsBtn').addEventListener('click', () => {
     vscode.postMessage({ type: 'getAnalytics' });
   }
 });
+$('#agentSel').addEventListener('change', (e) => vscode.postMessage({ type: 'selectAgent', agent: e.target.value }));
+$('#modelSel').addEventListener('change', (e) => vscode.postMessage({ type: 'selectModel', model: e.target.value }));
 $('#newChatBtn').addEventListener('click', () => vscode.postMessage({ type: 'newChat' }));
 $('#planBtn').addEventListener('click', () => vscode.postMessage({ type: 'togglePlanMode' }));
 $('#autoBtn').addEventListener('click', () => vscode.postMessage({ type: 'toggleAutoPermit' }));
@@ -533,6 +735,7 @@ $('#reviewBtn').addEventListener('click', () => vscode.postMessage({ type: 'revi
 $('#attachBtn').addEventListener('click', () => vscode.postMessage({ type: 'attachFile' }));
 $('#imageBtn').addEventListener('click', () => $('#imageFileInput').click());
 $('#rulesBtn').addEventListener('click', () => vscode.postMessage({ type: 'openRulesFile' }));
+$('#designBtn').addEventListener('click', () => DesignerView.open());
 $('#clearBtn').addEventListener('click', () => {
   if (confirm('Clear ALL chat history?')) vscode.postMessage({ type: 'clearMemory' });
 });
@@ -641,6 +844,18 @@ window.addEventListener('message', (e) => {
     case 'handoff': {
       const p = m.payload || {};
       ChatLog.pushHandoffBanner(p.from, p.to, p.reason);
+      return;
+    }
+    case 'design_progress': {
+      DesignerView.progress(m.payload && m.payload.message);
+      return;
+    }
+    case 'design_result': {
+      DesignerView.setResult(m.payload || {});
+      return;
+    }
+    case 'design_error': {
+      DesignerView.error(m.payload && m.payload.message);
       return;
     }
     case 'edits_summary': {

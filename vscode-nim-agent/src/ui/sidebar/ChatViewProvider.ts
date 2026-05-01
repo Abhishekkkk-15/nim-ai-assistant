@@ -8,6 +8,7 @@ import { collectEditorContext } from "../chat/contextCollector";
 import { renderChatHtml } from "./webview/template";
 import { EditTracker } from "../../core/agent/EditTracker";
 import { HANDOFF_MARKER, VALID_HANDOFF_ROLES } from "../../core/tools/HandOffTool";
+import { UiDesigner, UiDesignSpec } from "../../features/ui-designer/UiDesigner";
 
 interface AttachedImage {
   /** Stable id for client/server reconciliation. */
@@ -29,17 +30,28 @@ interface InboundMessage {
     | "newChat" | "loadSession" | "getAnalytics" | "clearAnalytics"
     | "attachImage" | "detachImage" | "pickImage"
     | "openEditDiff" | "revertEdit" | "revertAllEdits"
-    | "openRulesFile" | "createRulesFile";
+    | "openRulesFile" | "createRulesFile"
+    | "runDesign" | "exportDesignCode";
   text?: string; agent?: AgentRole; model?: string; allowed?: boolean;
   approved?: boolean; path?: string; code?: string; sessionId?: string;
   imageId?: string; imageName?: string; imageDataUrl?: string;
+  designSpec?: UiDesignSpec;
+  designIndex?: number;
+  exportFormat?: "react" | "html";
 }
+
+type DesignOutboundType =
+  | "design_progress"
+  | "design_result"
+  | "design_error"
+  | "design_export";
 
 interface OutboundMessage {
   type:
     | "state" | "user" | "assistant_start" | "assistant_token" | "assistant_end"
     | "step" | "error" | "info" | "permission_request" | "plan_proposal"
-    | "session_loaded" | "analytics" | "edits_summary" | "handoff";
+    | "session_loaded" | "analytics" | "edits_summary" | "handoff"
+    | DesignOutboundType;
   payload?: unknown;
 }
 
@@ -58,6 +70,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private lastProposedCode?: string;
   private permissionResolver?: (allowed: boolean) => void;
   private editTracker = new EditTracker();
+  private uiDesigner!: UiDesigner;
+  private currentDesignAbort: AbortController | undefined;
   private workspaceRules: string[] = [];
 
   constructor(private readonly context: vscode.ExtensionContext, private readonly store: ExtensionContextStore) {}
@@ -66,6 +80,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     this.view = view;
     view.webview.options = { enableScripts: true, localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, "media")] };
     view.webview.html = this.renderHtml(view.webview);
+    if (!this.uiDesigner) {
+      this.uiDesigner = new UiDesigner(this.store.providerRegistry, this.store.modelManager, this.store.logger);
+    }
     view.webview.onDidReceiveMessage((msg: InboundMessage) => {
       this.handleMessage(msg).catch(err => this.post({ type: "error", payload: String(err) }));
     });
@@ -114,7 +131,29 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         await this.refreshRules();
         this.refreshState();
         return;
-      case "send": await this.runPrompt(msg.text || "", msg.agent); return;
+      case "send":
+        if (msg.model) {
+          try {
+            this.store.modelManager.setActive(msg.model);
+          } catch (err: any) {
+            this.post({ type: "error", payload: `Failed to set model: ${err?.message || String(err)}` });
+          }
+        }
+        await this.runPrompt(msg.text || "", msg.agent);
+        return;
+      case "selectModel":
+        if (msg.model) {
+          try {
+            this.store.modelManager.setActive(msg.model);
+            this.refreshState();
+          } catch (err: any) {
+            this.post({ type: "error", payload: `Failed to set model: ${err?.message || String(err)}` });
+          }
+        }
+        return;
+      case "selectAgent":
+        // Pure UI state on the webview side; nothing to persist server-side here.
+        return;
       case "cancel": this.currentAbort?.abort(); return;
       case "clearMemory":
         await this.store.historyManager.clearAll();
@@ -193,6 +232,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.postEditsSummary();
         return;
       }
+
+      // ----- UI Designer -----
+      case "runDesign":
+        if (msg.designSpec) await this.runDesign(msg.designSpec);
+        return;
+      case "exportDesignCode":
+        // Reserved for future export-to-React/HTML pipeline.
+        this.post({ type: "info", payload: "Export to code is coming soon." });
+        return;
 
       // ----- Workspace rules -----
       case "openRulesFile":
@@ -316,6 +364,30 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       } catch { /* ignore */ }
     }
     this.post({ type: "step", payload: s });
+  }
+
+  private async runDesign(spec: UiDesignSpec): Promise<void> {
+    if (!this.uiDesigner) {
+      this.uiDesigner = new UiDesigner(this.store.providerRegistry, this.store.modelManager, this.store.logger);
+    }
+    this.currentDesignAbort?.abort();
+    const abort = new AbortController();
+    this.currentDesignAbort = abort;
+
+    this.post({ type: "design_progress", payload: { stage: "start", message: "Generating design..." } });
+    try {
+      const result = await this.uiDesigner.generate(
+        spec,
+        (m) => this.post({ type: "design_progress", payload: { stage: "step", message: m } }),
+        abort.signal,
+      );
+      this.post({ type: "design_result", payload: result });
+    } catch (err: any) {
+      this.store.logger?.error?.(`UiDesigner failed: ${err?.stack || err?.message || String(err)}`);
+      this.post({ type: "design_error", payload: { message: err?.message || String(err) } });
+    } finally {
+      if (this.currentDesignAbort === abort) this.currentDesignAbort = undefined;
+    }
   }
 
   private postEditsSummary(): void {

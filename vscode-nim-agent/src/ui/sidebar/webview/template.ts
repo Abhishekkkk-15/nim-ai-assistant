@@ -62,6 +62,7 @@ export function renderChatHtml(webview: vscode.Webview): string {
         <span class="select-wrap"><select id="modelSel" aria-label="Model"></select></span>
         <div class="spacer"></div>
         <button id="rulesBtn" class="icon-btn rules-btn" title="Workspace rules" aria-label="Workspace rules" style="width:auto; padding:0 8px; font-size: var(--sz-xs); font-weight:600; letter-spacing:.04em;">RULES</button>
+        <button id="designBtn" class="icon-btn design-btn" title="Generate UI design (Figma-style)" aria-label="Design UI" style="width:auto; padding:0 8px; font-size: var(--sz-xs); font-weight:600; letter-spacing:.04em;">DESIGN UI</button>
         <button id="planBtn" class="icon-btn" title="Plan-only mode" aria-label="Plan mode" style="width:auto; padding:0 8px; font-size: var(--sz-xs); font-weight:600; letter-spacing:.04em;">PLAN</button>
         <button id="autoBtn" class="icon-btn" title="Auto-approve tool use" aria-label="Auto-permit" style="width:auto; padding:0 8px; font-size: var(--sz-xs); font-weight:600; letter-spacing:.04em;">AUTO</button>
       </div>
@@ -119,6 +120,82 @@ export function renderChatHtml(webview: vscode.Webview): string {
         </button>
       </div>
       <div id="analyticsContent" class="overlay-content"></div>
+    </section>
+
+    <section id="designOverlay" class="overlay" role="dialog" aria-label="UI Designer">
+      <div class="overlay-header">
+        <span><span class="design-badge">UI Designer</span> Generate a Figma-style design</span>
+        <button class="icon-btn overlay-close" aria-label="Close">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+        </button>
+      </div>
+      <div id="designContent" class="overlay-content">
+        <form id="designForm" class="design-form" autocomplete="off">
+          <label class="field">
+            <span class="field-label">App type</span>
+            <select id="designAppType" class="field-input">
+              <option value="web">Web app</option>
+              <option value="mobile">Mobile app</option>
+              <option value="dashboard">Dashboard</option>
+              <option value="saas" selected>SaaS</option>
+              <option value="landing">Landing page</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">Visual style</span>
+            <select id="designStyle" class="field-input">
+              <option value="modern" selected>Modern</option>
+              <option value="minimal">Minimal</option>
+              <option value="dark">Dark</option>
+              <option value="playful">Playful</option>
+              <option value="corporate">Corporate</option>
+              <option value="brutalist">Brutalist</option>
+              <option value="glassmorphism">Glassmorphism</option>
+            </select>
+          </label>
+          <label class="field">
+            <span class="field-label">Required features (one per line)</span>
+            <textarea id="designFeatures" class="field-input" rows="5" placeholder="Auth & onboarding\nProject dashboard with charts\nBilling & plan upgrade\nTeam settings"></textarea>
+          </label>
+          <label class="field">
+            <span class="field-label">Notes (optional)</span>
+            <input id="designNotes" type="text" class="field-input" placeholder="Audience, brand vibe, must-have screens\u2026" />
+          </label>
+          <label class="field field-inline">
+            <span class="field-label">Variations</span>
+            <select id="designVariations" class="field-input compact">
+              <option value="1" selected>1 design</option>
+              <option value="2">2 designs</option>
+              <option value="3">3 designs</option>
+            </select>
+          </label>
+          <div class="design-actions">
+            <button type="button" class="btn secondary overlay-close">Cancel</button>
+            <button type="submit" id="designSubmitBtn" class="btn">Generate</button>
+          </div>
+        </form>
+
+        <div id="designProgress" class="design-progress" style="display:none">
+          <span class="spinner"></span>
+          <span id="designProgressMsg">Generating design\u2026</span>
+        </div>
+
+        <div id="designError" class="design-error" style="display:none"></div>
+
+        <div id="designResult" class="design-result" style="display:none">
+          <div class="design-result-tabs">
+            <button class="tab-btn active" data-tab="visual">Visual</button>
+            <button class="tab-btn" data-tab="tree">Component tree</button>
+            <button class="tab-btn" data-tab="json">JSON</button>
+            <span class="spacer"></span>
+            <select id="designVariantSel" class="field-input compact" style="display:none"></select>
+            <button id="designNewBtn" class="btn secondary" type="button">New design</button>
+          </div>
+          <div id="designTabVisual" class="design-tab"></div>
+          <div id="designTabTree" class="design-tab" style="display:none"></div>
+          <div id="designTabJson" class="design-tab" style="display:none"></div>
+        </div>
+      </div>
     </section>
 
   </div>
