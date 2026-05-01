@@ -184,11 +184,27 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.planMode = !this.planMode;
         this.refreshState();
         return;
-      case "reviewFile":
-        if (msg.path) {
-          await this.openReview(msg.path, msg.text ?? "");
+      case "reviewFile": {
+        if (!msg.path) return;
+        try {
+          const workspaceRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
+          if (!workspaceRoot) return;
+          const fullPath = path.isAbsolute(msg.path) ? msg.path : path.join(workspaceRoot, msg.path);
+          const uri = vscode.Uri.file(fullPath);
+          
+          // Use a unique temp file in extension storage
+          const tmpDir = this.context.globalStorageUri.fsPath;
+          await vscode.workspace.fs.createDirectory(this.context.globalStorageUri);
+          const tmpUri = vscode.Uri.file(path.join(tmpDir, "proposed_change.txt"));
+          
+          await vscode.workspace.fs.writeFile(tmpUri, Buffer.from(msg.text ?? ""));
+          
+          await vscode.commands.executeCommand("vscode.diff", uri, tmpUri, `Review: ${path.basename(msg.path)} (Proposed)`);
+        } catch (e) {
+          vscode.window.showErrorMessage("Failed to open diff: " + e);
         }
         return;
+      }
       case "attachFile":
         if (msg.path) this.attachedFiles.add(msg.path);
         this.refreshState();
@@ -249,7 +265,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         },
         onPermissionRequest: async (tool, input) => {
           if (this.autoPermit) return true;
-          this.post({ type: "permission_request", payload: { tool, input } });
+          
+          let reviewContent = input.content;
+          if (tool === "replace_file_content" || tool === "replace_in_file") {
+            try {
+              const relPath = input.path;
+              const folders = vscode.workspace.workspaceFolders;
+              if (folders) {
+                const uri = vscode.Uri.joinPath(folders[0].uri, relPath);
+                const data = await vscode.workspace.fs.readFile(uri);
+                const text = Buffer.from(data).toString("utf8");
+                if (tool === "replace_file_content") {
+                   reviewContent = text.replace(input.targetContent, input.replacementContent);
+                } else {
+                   reviewContent = text.split(input.search).join(input.replace);
+                }
+              }
+            } catch (e) { /* ignore */ }
+          }
+
+          this.post({ type: "permission_request", payload: { tool, input, reviewContent } });
           return new Promise<boolean>((resolve) => {
             this.permissionResolver = resolve;
           });
@@ -808,7 +843,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     promptText.textContent = text;
     promptBar.style.display = 'flex';
     currentPermissionRequest = { type, data };
-    const canReview = data && (data.tool === 'write_file' || data.tool === 'propose_edit');
+    const canReview = data && (data.tool === 'write_file' || data.tool === 'propose_edit' || data.tool === 'replace_file_content' || data.tool === 'replace_in_file');
     reviewBtn.style.display = canReview ? 'inline-block' : 'none';
   }
 
@@ -849,8 +884,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   reviewBtn.addEventListener('click', () => {
     if (currentPermissionRequest && currentPermissionRequest.data) {
-      const payload = currentPermissionRequest.data.input;
-      vscode.postMessage({ type: 'reviewFile', path: payload.path, text: payload.content });
+      const data = currentPermissionRequest.data;
+      const path = data.input.path;
+      const text = data.reviewContent || data.input.content;
+      vscode.postMessage({ type: 'reviewFile', path, text });
     }
   });
 
