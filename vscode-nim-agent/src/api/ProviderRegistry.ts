@@ -2,6 +2,7 @@ import * as vscode from "vscode";
 import type { Logger } from "../utils/logger";
 import { BaseProvider, ProviderConfig } from "./BaseProvider";
 import { NimClient } from "./NimClient";
+import { GenericClient } from "./GenericClient";
 import type { ApiKeyManager } from "./ApiKeyManager";
 import type { AnalyticsManager } from "../core/memory/AnalyticsManager";
 
@@ -43,7 +44,16 @@ export class ProviderRegistry {
 
     for (const cfg of providers) {
       const baseUrl = cfg.baseUrl || apiBaseUrl;
-      this.register(new NimClient({ ...cfg, baseUrl }, this.keys, this.logger, this.analytics));
+      const providerConfig = { ...cfg, baseUrl };
+      
+      let client: BaseProvider;
+      if (cfg.id === "nvidia-nim") {
+        client = new NimClient(providerConfig, this.keys, this.logger, this.analytics);
+      } else {
+        client = new GenericClient(providerConfig, this.keys, this.logger, this.analytics);
+      }
+      
+      this.register(client);
       if (cfg.active && !this.activeId) {
         this.activeId = cfg.id;
       }

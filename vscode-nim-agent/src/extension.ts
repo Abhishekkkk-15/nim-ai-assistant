@@ -20,6 +20,8 @@ import { GetDiagnosticsTool } from "./core/tools/GetDiagnosticsTool";
 import { ApplyWorkspaceEditTool } from "./core/tools/ApplyWorkspaceEditTool";
 import { SemanticSearchTool } from "./core/tools/SemanticSearchTool";
 import { WebSearchTool } from "./core/tools/WebSearchTool";
+import { HandOffTool } from "./core/tools/HandOffTool";
+import { ParallelHandOffTool } from "./core/tools/ParallelHandOffTool";
 import { TestRunnerTool } from "./core/tools/TestRunnerTool";
 import { FrameworkScaffoldTool } from "./core/tools/FrameworkScaffoldTool";
 import { VectorIndexService } from "./core/context/VectorIndexService";
@@ -28,7 +30,6 @@ import { LocalCache } from "./core/memory/LocalCache";
 import { AgentRegistry } from "./core/agent/AgentRegistry";
 import { ContextManager } from "./core/context/ContextManager";
 import { RulesLoader } from "./core/context/RulesLoader";
-import { HandOffTool } from "./core/tools/HandOffTool";
 import { HistoryManager } from "./core/memory/HistoryManager";
 import { AnalyticsManager } from "./core/memory/AnalyticsManager";
 import { registerInlineEditCommand } from "./commands/InlineEditCommand";
@@ -111,6 +112,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   toolRegistry.register(new TestRunnerTool());
   toolRegistry.register(new FrameworkScaffoldTool());
   toolRegistry.register(new HandOffTool());
+  toolRegistry.register(new ParallelHandOffTool());
   store.toolRegistry = toolRegistry;
 
   // Agents

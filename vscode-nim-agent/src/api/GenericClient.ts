@@ -8,16 +8,15 @@ import {
 } from "./BaseProvider";
 import type { ApiKeyManager } from "./ApiKeyManager";
 import type { Logger } from "../utils/logger";
-
 import type { AnalyticsManager } from "../core/memory/AnalyticsManager";
 
 const MAX_ROTATIONS = 3;
 
 /**
- * NVIDIA NIM client. Uses the OpenAI-compatible Chat Completions interface
- * exposed by `https://integrate.api.nvidia.com/v1/chat/completions`.
+ * Generic OpenAI-compatible client. 
+ * Supports Groq, OpenRouter, DeepSeek, Ollama, etc.
  */
-export class NimClient extends BaseProvider {
+export class GenericClient extends BaseProvider {
   readonly id: string;
   readonly label: string;
   private readonly http: AxiosInstance;
@@ -31,10 +30,21 @@ export class NimClient extends BaseProvider {
     super();
     this.id = config.id;
     this.label = config.label;
+    
+    const headers: Record<string, string> = { 
+      "Content-Type": "application/json" 
+    };
+
+    // Special headers for OpenRouter
+    if (this.id === "openrouter") {
+      headers["HTTP-Referer"] = "https://github.com/nim-agent/nim-agent-ide";
+      headers["X-Title"] = "NIM Agent IDE";
+    }
+
     this.http = axios.create({
       baseURL: config.baseUrl.replace(/\/+$/, ""),
       timeout: 120_000,
-      headers: { "Content-Type": "application/json" }
+      headers
     });
   }
 
@@ -93,8 +103,9 @@ export class NimClient extends BaseProvider {
               buffer = buffer.slice(idx + 2);
               if (!frame) continue;
               for (const line of frame.split("\n")) {
-                if (!line.startsWith("data:")) continue;
-                const payload = line.slice(5).trim();
+                const dataPrefix = "data:";
+                if (!line.startsWith(dataPrefix)) continue;
+                const payload = line.slice(dataPrefix.length).trim();
                 if (!payload || payload === "[DONE]") continue;
                 try {
                   const json = JSON.parse(payload);
@@ -170,28 +181,20 @@ export class NimClient extends BaseProvider {
     };
   }
 
-  /**
-   * Run an operation with the next available API key. On 429 / network
-   * failure rotate to the next key and retry up to MAX_ROTATIONS times.
-   */
   private async withRotation<T>(op: (apiKey: string) => Promise<T>, req?: ChatRequest): Promise<T> {
     if (!this.keys.hasKeys(this.id)) {
-      throw new Error(
-        `No API key configured for provider ${this.label}. Run "NIM Agent: Add API Key" from the Command Palette.`
-      );
+      throw new Error(`No API key configured for provider ${this.label}.`);
     }
     let lastErr: unknown;
     const startTime = Date.now();
     for (let attempt = 0; attempt < Math.min(MAX_ROTATIONS, this.keys.count(this.id)); attempt++) {
       const apiKey = this.keys.next(this.id);
-      if (!apiKey) {
-        break;
-      }
+      if (!apiKey) break;
+      
       try {
         const result = await op(apiKey);
         this.keys.reportSuccess(this.id, apiKey);
         
-        // Log success
         if (this.analytics && result && typeof result === 'object') {
           const res = result as any;
           this.analytics.logEvent({
@@ -218,7 +221,6 @@ export class NimClient extends BaseProvider {
         }
         
         if (!transient && status) {
-          // Log permanent error
           this.analytics?.logEvent({
             model: req?.model || "unknown",
             agent: "agent",
@@ -230,12 +232,11 @@ export class NimClient extends BaseProvider {
             duration: Date.now() - startTime,
             apiKeyName: apiKey.substring(0, 8) + "..."
           });
-          throw this.normalizeError(err);
+          throw err;
         }
       }
     }
     
-    // Log final failure after all retries
     this.analytics?.logEvent({
       model: req?.model || "unknown",
       agent: "agent",
@@ -248,28 +249,6 @@ export class NimClient extends BaseProvider {
       apiKeyName: "all-failed"
     });
     
-    throw this.normalizeError(lastErr ?? new Error("Unknown NIM client error."));
-  }
-
-  private normalizeError(err: unknown): Error {
-    if (axios.isAxiosError(err)) {
-      const status = err.response?.status;
-      const body = err.response?.data;
-      let detail = "";
-
-      if (typeof body === "string") {
-        detail = body;
-      } else if (body && typeof body === "object") {
-        // If it's a stream (common in chatStream errors), don't stringify it
-        if (body.constructor?.name === "IncomingMessage" || body.readable) {
-          detail = "Stream error (see logs for details)";
-        } else {
-          detail = body.error?.message ?? body.message ?? JSON.stringify(body);
-        }
-      }
-
-      return new Error(`NIM API error (${status ?? "network"}): ${detail || err.message}`);
-    }
-    return err instanceof Error ? err : new Error(String(err));
+    throw lastErr;
   }
 }

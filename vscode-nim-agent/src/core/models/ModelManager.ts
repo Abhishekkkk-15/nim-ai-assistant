@@ -3,6 +3,7 @@ import type { Logger } from "../../utils/logger";
 
 export interface ModelConfig {
   name: string;
+  providerId: string;
   enabled: boolean;
 }
 
@@ -21,7 +22,11 @@ export class ModelManager {
     const raw = config.get<ModelConfig[]>("models", []) ?? [];
     this.models = raw
       .filter((m) => m && typeof m.name === "string" && m.name.length > 0)
-      .map((m) => ({ name: m.name, enabled: m.enabled !== false }));
+      .map((m) => ({ 
+        name: m.name, 
+        providerId: m.providerId || "nvidia-nim", // Default to NIM for migration
+        enabled: m.enabled !== false 
+      }));
 
     const def = config.get<string>("defaultModel", "");
     if (def && this.models.some((m) => m.name === def && m.enabled)) {
@@ -51,6 +56,11 @@ export class ModelManager {
     return this.active;
   }
 
+  getProviderForModel(modelName: string): string {
+    const m = this.models.find(m => m.name === modelName);
+    return m?.providerId || "nvidia-nim";
+  }
+
   setActive(name: string): void {
     if (!this.models.some((m) => m.name === name)) {
       throw new Error(`Model "${name}" is not in nimAgent.models.`);
@@ -58,7 +68,7 @@ export class ModelManager {
     this.active = name;
   }
 
-  async addModel(name: string): Promise<void> {
+  async addModel(name: string, providerId: string = "nvidia-nim"): Promise<void> {
     const trimmed = name.trim();
     if (!trimmed) {
       throw new Error("Model name cannot be empty.");
@@ -66,7 +76,7 @@ export class ModelManager {
     if (this.models.some((m) => m.name === trimmed)) {
       throw new Error("Model already exists.");
     }
-    this.models.push({ name: trimmed, enabled: true });
+    this.models.push({ name: trimmed, providerId, enabled: true });
     await this.persist();
   }
 

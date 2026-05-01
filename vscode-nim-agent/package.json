@@ -98,6 +98,11 @@
         "category": "NIM Agent"
       },
       {
+        "command": "nimAgent.addModel",
+        "title": "NIM Agent: Add Model",
+        "category": "NIM Agent"
+      },
+      {
         "command": "nimAgent.selectAgent",
         "title": "NIM Agent: Select Active Agent",
         "category": "NIM Agent"
@@ -185,7 +190,12 @@
           "items": {
             "type": "string"
           },
-          "description": "Up to 3 NVIDIA NIM API keys. Keys are rotated automatically on rate-limit (429) or failure. Prefer using the 'Add API Key' command which stores keys in VS Code secret storage."
+          "description": "Legacy NIM API keys. Recommended: use 'Add API Key' command which stores keys securely per-provider."
+        },
+        "nimAgent.providerKeys": {
+          "type": "object",
+          "default": {},
+          "description": "API keys mapped by provider ID (e.g., {'groq': ['...']}). Recommended: use the 'Add API Key' command."
         },
         "nimAgent.useSecretStorage": {
           "type": "boolean",
@@ -195,18 +205,19 @@
         "nimAgent.models": {
           "type": "array",
           "default": [
-            { "name": "meta/llama-3.1-70b-instruct", "enabled": true },
-            { "name": "mistralai/mistral-large", "enabled": true },
-            { "name": "meta/llama-3.1-8b-instruct", "enabled": true }
+            { "name": "meta/llama-3.1-70b-instruct", "providerId": "nvidia-nim", "enabled": true },
+            { "name": "mistralai/mistral-large", "providerId": "nvidia-nim", "enabled": true },
+            { "name": "meta/llama-3.1-8b-instruct", "providerId": "nvidia-nim", "enabled": true }
           ],
           "items": {
             "type": "object",
             "properties": {
               "name": { "type": "string" },
+              "providerId": { "type": "string", "default": "nvidia-nim" },
               "enabled": { "type": "boolean" }
             }
           },
-          "description": "List of available NIM models. Add or remove entries as needed."
+          "description": "List of available models mapped to their respective providers."
         },
         "nimAgent.defaultModel": {
           "type": "string",

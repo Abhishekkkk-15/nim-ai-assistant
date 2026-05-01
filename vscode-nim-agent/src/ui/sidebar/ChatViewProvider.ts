@@ -8,6 +8,7 @@ import { collectEditorContext } from "../chat/contextCollector";
 import { renderChatHtml } from "./webview/template";
 import { EditTracker } from "../../core/agent/EditTracker";
 import { HANDOFF_MARKER, VALID_HANDOFF_ROLES } from "../../core/tools/HandOffTool";
+import { PARALLEL_HANDOFF_MARKER, ParallelHandoffItem } from "../../core/tools/ParallelHandOffTool";
 import { UiDesigner, UiDesignSpec } from "../../features/ui-designer/UiDesigner";
 import { SmartBuilderOrchestrator, applySmartBuildFiles } from "../../features/smart-builder/orchestrator";
 import type { BuilderInput, BuilderMode, BuilderRunResult, GeneratedFile } from "../../features/smart-builder/types";
@@ -356,11 +357,38 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           }
         });
 
+        const parallelHandoff = this.parseParallelHandoff(result.content);
         const handoff = this.parseHandoff(result.content);
         const displayContent = this.sanitizeForDisplay(result.content);
 
         await this.store.historyManager.appendMessage({ role: "assistant", content: displayContent });
         this.post({ type: "assistant_end", payload: { content: displayContent, agent: role } });
+
+        if (parallelHandoff && handoffCount < MAX_HANDOFFS) {
+          handoffCount++;
+          this.post({ type: "info", payload: `Executing ${parallelHandoff.length} tasks in parallel...` });
+          
+          const parallelResults = await Promise.all(parallelHandoff.map(async (item) => {
+            const agent = this.store.agentRegistry.get(item.to as AgentRole);
+            this.post({ type: "info", payload: `Parallel Task Start: ${item.to} - ${item.reason}` });
+            
+            // For parallel runs, we swallow tokens to keep the UI clean, but log the result
+            const res = await agent.run({
+              prompt: item.followUp,
+              context: await collectEditorContext(Array.from(this.attachedFiles)),
+              planMode: false, // Parallel tasks usually execute directly
+              signal: this.currentAbort?.signal,
+              onStep: s => this.handleAgentStep(s)
+            });
+            
+            this.post({ type: "info", payload: `Parallel Task Finished: ${item.to}` });
+            return `--- Result from ${item.to} (${item.reason}) ---\n${res.content}\n`;
+          }));
+
+          currentPrompt = `Parallel tasks completed. Here are the results:\n\n${parallelResults.join("\n")}\n\nPlease analyze these results and decide on the next step.`;
+          currentImages = undefined;
+          continue;
+        }
 
         if (handoff && handoffCount < MAX_HANDOFFS) {
           handoffCount++;
@@ -556,9 +584,25 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   private sanitizeForDisplay(text: string): string {
     if (!text) return text;
-    const idx = text.indexOf(HANDOFF_MARKER);
-    if (idx < 0) return text;
-    return text.slice(0, idx).trim();
+    let result = text;
+    const hIdx = result.indexOf(HANDOFF_MARKER);
+    if (hIdx >= 0) result = result.slice(0, hIdx);
+    const pIdx = result.indexOf(PARALLEL_HANDOFF_MARKER);
+    if (pIdx >= 0) result = result.slice(0, pIdx);
+    return result.trim();
+  }
+
+  private parseParallelHandoff(text: string): ParallelHandoffItem[] | undefined {
+    if (!text) return undefined;
+    const idx = text.indexOf(PARALLEL_HANDOFF_MARKER);
+    if (idx < 0) return undefined;
+    try {
+      const json = text.slice(idx + PARALLEL_HANDOFF_MARKER.length);
+      const items = JSON.parse(json);
+      return Array.isArray(items) ? items : undefined;
+    } catch {
+      return undefined;
+    }
   }
 
   /**

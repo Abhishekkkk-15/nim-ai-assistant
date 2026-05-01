@@ -1,8 +1,9 @@
 import * as vscode from "vscode";
 import type { Logger } from "../utils/logger";
 
-const SECRET_KEY = "nimAgent.apiKeys";
-const MAX_KEYS = 3;
+const SECRET_KEY = "nimAgent.providerKeys";
+const OLD_SECRET_KEY = "nimAgent.apiKeys"; // For backward compatibility
+const MAX_KEYS_PER_PROVIDER = 3;
 
 interface KeyEntry {
   key: string;
@@ -12,13 +13,13 @@ interface KeyEntry {
 }
 
 /**
- * Manages up to 3 API keys with round-robin rotation.
- * On 429 / failure the active key is penalized and the next healthy key is used.
- * Storage prefers VS Code SecretStorage but falls back to settings.json.
+ * Manages API keys per provider (e.g., 'nvidia-nim', 'groq', 'openrouter').
+ * Supports round-robin rotation per provider and cooldowns on 429 errors.
  */
 export class ApiKeyManager {
-  private entries: KeyEntry[] = [];
-  private cursor = 0;
+  // Map of providerId -> array of KeyEntries
+  private providerEntries = new Map<string, KeyEntry[]>();
+  private cursors = new Map<string, number>();
 
   constructor(
     private readonly context: vscode.ExtensionContext,
@@ -27,123 +28,187 @@ export class ApiKeyManager {
 
   async load(): Promise<void> {
     const useSecret = this.useSecretStorage();
-    let keys: string[] = [];
+    let keysMap: Record<string, string[]> = {};
 
     if (useSecret) {
-      const raw = await this.context.secrets.get(SECRET_KEY);
+      // 1. Try to load the new multi-provider format
+      let raw = await this.context.secrets.get(SECRET_KEY);
       if (raw) {
         try {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) {
-            keys = parsed.filter((k) => typeof k === "string" && k.length > 0);
-          }
+          keysMap = JSON.parse(raw);
         } catch (err) {
-          this.logger.warn("Could not parse secret-stored API keys; ignoring.", err);
+          this.logger.warn("Could not parse secret-stored provider keys; ignoring.", err);
+        }
+      } else {
+        // 2. Backward compatibility: check if the old flat array exists
+        const oldRaw = await this.context.secrets.get(OLD_SECRET_KEY);
+        if (oldRaw) {
+          try {
+            const parsed = JSON.parse(oldRaw);
+            if (Array.isArray(parsed)) {
+              keysMap["nvidia-nim"] = parsed.filter((k) => typeof k === "string" && k.length > 0);
+              // Migrate and clean up old key
+              await this.persistMap(keysMap);
+              await this.context.secrets.delete(OLD_SECRET_KEY);
+            }
+          } catch (err) {
+            // ignore
+          }
         }
       }
     }
 
-    // Always merge in any keys that the user put in settings.json so we don't lose them
+    // Merge in any keys from settings.json (fallback)
     const config = vscode.workspace.getConfiguration("nimAgent");
-    const fromSettings = config.get<string[]>("apiKeys", []) ?? [];
-    for (const k of fromSettings) {
-      if (typeof k === "string" && k.length > 0 && !keys.includes(k)) {
-        keys.push(k);
+    
+    // Check old config format
+    const oldConfigKeys = config.get<string[]>("apiKeys", []);
+    if (oldConfigKeys.length > 0) {
+      if (!keysMap["nvidia-nim"]) keysMap["nvidia-nim"] = [];
+      for (const k of oldConfigKeys) {
+        if (!keysMap["nvidia-nim"].includes(k)) keysMap["nvidia-nim"].push(k);
       }
     }
 
-    keys = keys.slice(0, MAX_KEYS);
-    this.entries = keys.map((key) => ({ key, failures: 0, lastUsedAt: 0, cooldownUntil: 0 }));
-    this.cursor = 0;
-    this.logger.info(`Loaded ${this.entries.length} API key(s).`);
+    // Check new config format (if we decide to add it later, for now we just use secret storage)
+    const newConfigKeys = config.get<Record<string, string[]>>("providerKeys", {});
+    for (const [providerId, keys] of Object.entries(newConfigKeys)) {
+      if (!keysMap[providerId]) keysMap[providerId] = [];
+      for (const k of keys) {
+        if (!keysMap[providerId].includes(k)) keysMap[providerId].push(k);
+      }
+    }
+
+    this.providerEntries.clear();
+    this.cursors.clear();
+
+    let totalKeys = 0;
+    for (const [providerId, keys] of Object.entries(keysMap)) {
+      const validKeys = keys.slice(0, MAX_KEYS_PER_PROVIDER);
+      this.providerEntries.set(providerId, validKeys.map(key => ({ key, failures: 0, lastUsedAt: 0, cooldownUntil: 0 })));
+      this.cursors.set(providerId, 0);
+      totalKeys += validKeys.length;
+    }
+
+    this.logger.info(`Loaded ${totalKeys} API key(s) across ${this.providerEntries.size} provider(s).`);
   }
 
-  hasKeys(): boolean {
-    return this.entries.length > 0;
+  hasKeys(providerId?: string): boolean {
+    if (providerId) {
+      const entries = this.providerEntries.get(providerId);
+      return !!entries && entries.length > 0;
+    }
+    return Array.from(this.providerEntries.values()).some(entries => entries.length > 0);
   }
 
-  count(): number {
-    return this.entries.length;
+  count(providerId?: string): number {
+    if (providerId) {
+      return this.providerEntries.get(providerId)?.length || 0;
+    }
+    let total = 0;
+    for (const entries of this.providerEntries.values()) {
+      total += entries.length;
+    }
+    return total;
   }
 
-  /**
-   * Pick the next healthy key in round-robin order.
-   * Skips keys whose cooldown has not yet expired.
-   */
-  next(): string | undefined {
-    if (this.entries.length === 0) {
+  next(providerId: string): string | undefined {
+    const entries = this.providerEntries.get(providerId);
+    if (!entries || entries.length === 0) {
       return undefined;
     }
+    
+    const cursor = this.cursors.get(providerId) || 0;
     const now = Date.now();
-    for (let i = 0; i < this.entries.length; i++) {
-      const idx = (this.cursor + i) % this.entries.length;
-      const entry = this.entries[idx];
+    
+    for (let i = 0; i < entries.length; i++) {
+      const idx = (cursor + i) % entries.length;
+      const entry = entries[idx];
       if (entry.cooldownUntil <= now) {
-        this.cursor = (idx + 1) % this.entries.length;
+        this.cursors.set(providerId, (idx + 1) % entries.length);
         entry.lastUsedAt = now;
         return entry.key;
       }
     }
+    
     // All keys are cooling down — return the soonest-available one anyway.
-    const fallback = this.entries.reduce((a, b) => (a.cooldownUntil < b.cooldownUntil ? a : b));
+    const fallback = entries.reduce((a, b) => (a.cooldownUntil < b.cooldownUntil ? a : b));
     fallback.lastUsedAt = now;
     return fallback.key;
   }
 
-  /**
-   * Mark a key as failing. 429 responses trigger a longer cooldown.
-   */
-  reportFailure(key: string, status?: number): void {
-    const entry = this.entries.find((e) => e.key === key);
-    if (!entry) {
-      return;
-    }
+  reportFailure(providerId: string, key: string, status?: number): void {
+    const entries = this.providerEntries.get(providerId);
+    if (!entries) return;
+    
+    const entry = entries.find((e) => e.key === key);
+    if (!entry) return;
+    
     entry.failures += 1;
     const baseCooldown = status === 429 ? 30_000 : 5_000;
     entry.cooldownUntil = Date.now() + baseCooldown * Math.min(entry.failures, 6);
-    this.logger.warn(
-      `API key ${this.maskKey(key)} penalized (status=${status ?? "n/a"}, failures=${entry.failures}).`
-    );
+    this.logger.warn(`API key for ${providerId} (${this.maskKey(key)}) penalized (status=${status ?? "n/a"}, failures=${entry.failures}).`);
   }
 
-  reportSuccess(key: string): void {
-    const entry = this.entries.find((e) => e.key === key);
-    if (!entry) {
-      return;
-    }
+  reportSuccess(providerId: string, key: string): void {
+    const entries = this.providerEntries.get(providerId);
+    if (!entries) return;
+
+    const entry = entries.find((e) => e.key === key);
+    if (!entry) return;
+    
     entry.failures = 0;
     entry.cooldownUntil = 0;
   }
 
-  async addKey(key: string): Promise<void> {
+  async addKey(providerId: string, key: string): Promise<void> {
+    if (!key || typeof key.trim !== "function") {
+      throw new Error("Invalid API key provided.");
+    }
     const trimmed = key.trim();
-    if (!trimmed) {
-      throw new Error("API key cannot be empty.");
+    if (!trimmed) throw new Error("API key cannot be empty.");
+    
+    let entries = this.providerEntries.get(providerId);
+    if (!entries) {
+      entries = [];
+      this.providerEntries.set(providerId, entries);
     }
-    if (this.entries.some((e) => e.key === trimmed)) {
-      throw new Error("This API key is already registered.");
+
+    if (entries.some((e) => e.key === trimmed)) {
+      throw new Error(`This API key is already registered for ${providerId}.`);
     }
-    if (this.entries.length >= MAX_KEYS) {
-      throw new Error(`Cannot register more than ${MAX_KEYS} API keys.`);
+    if (entries.length >= MAX_KEYS_PER_PROVIDER) {
+      throw new Error(`Cannot register more than ${MAX_KEYS_PER_PROVIDER} keys for ${providerId}.`);
     }
-    this.entries.push({ key: trimmed, failures: 0, lastUsedAt: 0, cooldownUntil: 0 });
+    
+    entries.push({ key: trimmed, failures: 0, lastUsedAt: 0, cooldownUntil: 0 });
     await this.persist();
   }
 
-  async removeKey(maskedOrFull: string): Promise<void> {
-    const before = this.entries.length;
-    this.entries = this.entries.filter(
-      (e) => e.key !== maskedOrFull && this.maskKey(e.key) !== maskedOrFull
-    );
-    if (this.entries.length === before) {
+  async removeKey(providerId: string, maskedOrFull: string): Promise<void> {
+    const entries = this.providerEntries.get(providerId);
+    if (!entries) throw new Error("No keys found for this provider.");
+
+    const before = entries.length;
+    const updated = entries.filter((e) => e.key !== maskedOrFull && this.maskKey(e.key) !== maskedOrFull);
+    
+    if (updated.length === before) {
       throw new Error("Key not found.");
     }
+    
+    if (updated.length === 0) {
+      this.providerEntries.delete(providerId);
+    } else {
+      this.providerEntries.set(providerId, updated);
+    }
+    
     await this.persist();
   }
 
-  list(): { masked: string; failures: number; cooldownMs: number }[] {
+  list(providerId: string): { masked: string; failures: number; cooldownMs: number }[] {
+    const entries = this.providerEntries.get(providerId) || [];
     const now = Date.now();
-    return this.entries.map((e) => ({
+    return entries.map((e) => ({
       masked: this.maskKey(e.key),
       failures: e.failures,
       cooldownMs: Math.max(0, e.cooldownUntil - now)
@@ -151,20 +216,24 @@ export class ApiKeyManager {
   }
 
   private async persist(): Promise<void> {
+    const mapToSave: Record<string, string[]> = {};
+    for (const [providerId, entries] of this.providerEntries.entries()) {
+      mapToSave[providerId] = entries.map(e => e.key);
+    }
+    await this.persistMap(mapToSave);
+  }
+
+  private async persistMap(keysMap: Record<string, string[]>): Promise<void> {
     if (this.useSecretStorage()) {
-      await this.context.secrets.store(SECRET_KEY, JSON.stringify(this.entries.map((e) => e.key)));
-      // Also clear settings.json copies so we don't leave keys in plaintext.
+      await this.context.secrets.store(SECRET_KEY, JSON.stringify(keysMap));
+      // Clear legacy
       const config = vscode.workspace.getConfiguration("nimAgent");
       if ((config.get<string[]>("apiKeys", []) ?? []).length > 0) {
         await config.update("apiKeys", [], vscode.ConfigurationTarget.Global);
       }
     } else {
       const config = vscode.workspace.getConfiguration("nimAgent");
-      await config.update(
-        "apiKeys",
-        this.entries.map((e) => e.key),
-        vscode.ConfigurationTarget.Global
-      );
+      await config.update("providerKeys", keysMap, vscode.ConfigurationTarget.Global);
     }
   }
 
@@ -173,9 +242,7 @@ export class ApiKeyManager {
   }
 
   private maskKey(key: string): string {
-    if (key.length <= 8) {
-      return "***";
-    }
+    if (key.length <= 8) return "***";
     return `${key.slice(0, 4)}...${key.slice(-4)}`;
   }
 }

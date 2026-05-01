@@ -86,8 +86,9 @@ export abstract class BaseAgent {
   }
 
   async run(input: AgentRunInput): Promise<AgentRunResult> {
-    const provider = this.store.providerRegistry.active();
     const model = input.modelOverride ?? this.store.modelManager.getActive();
+    const providerId = this.store.modelManager.getProviderForModel(model);
+    const provider = this.store.providerRegistry.get(providerId);
     const config = vscode.workspace.getConfiguration("nimAgent");
     const maxSteps = config.get<number>("maxAgentSteps", 8);
     const streaming = config.get<boolean>("streaming", true);
