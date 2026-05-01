@@ -431,6 +431,7 @@ $('#newChatBtn').addEventListener('click', () => vscode.postMessage({ type: 'new
 $('#planBtn').addEventListener('click', () => vscode.postMessage({ type: 'togglePlanMode' }));
 $('#autoBtn').addEventListener('click', () => vscode.postMessage({ type: 'toggleAutoPermit' }));
 $('#reviewBtn').addEventListener('click', () => vscode.postMessage({ type: 'reviewFile' }));
+$('#attachBtn').addEventListener('click', () => vscode.postMessage({ type: 'attachFile' }));
 $('#clearBtn').addEventListener('click', () => {
   if (confirm('Clear ALL chat history?')) vscode.postMessage({ type: 'clearMemory' });
 });

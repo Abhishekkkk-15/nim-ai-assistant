@@ -79,6 +79,9 @@ export function renderChatHtml(webview: vscode.Webview): string {
       </div>
 
       <div class="composer-row">
+        <button id="attachBtn" class="icon-btn" title="Attach files to context" aria-label="Attach files">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 7 7 11.5a2.5 2.5 0 1 1-3.5-3.5l5-5a3.5 3.5 0 1 1 5 5L8 13.5"/></svg>
+        </button>
         <div id="status" class="status" data-state="idle">
           <span class="status-dot"></span>
           <span class="status-text"></span>

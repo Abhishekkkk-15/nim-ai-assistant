@@ -116,6 +116,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       case "pinFile": if (msg.path) await this.store.contextManager.pinFile(msg.path); this.refreshState(); return;
       case "unpinFile": if (msg.path) await this.store.contextManager.unpin(msg.path); this.refreshState(); return;
       case "detachFile": if (msg.path) this.attachedFiles.delete(msg.path); this.refreshState(); return;
+      case "attachFile": await this.attachFiles(msg.path); return;
       case "reviewFile": await this.runPrompt("Review active file for improvements.", "coder"); return;
       case "diffReview": {
         const editor = vscode.window.activeTextEditor;
@@ -176,6 +177,51 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: "assistant_end", payload: { content: result.content } });
       this.refreshState();
     } catch (err) { this.post({ type: "error", payload: String(err) }); }
+  }
+
+  /**
+   * Attach one or more files to the next prompt's context.
+   * If a path is provided we attach it directly (workspace-relative).
+   * Otherwise we open VS Code's native file picker, scoped to the first
+   * workspace folder when available.
+   */
+  private async attachFiles(givenPath?: string): Promise<void> {
+    const folders = vscode.workspace.workspaceFolders;
+    const root = folders && folders.length > 0 ? folders[0] : undefined;
+
+    let picked: vscode.Uri[] = [];
+    if (givenPath) {
+      try {
+        const uri = root ? vscode.Uri.joinPath(root.uri, givenPath) : vscode.Uri.file(givenPath);
+        picked = [uri];
+      } catch { picked = []; }
+    } else {
+      const result = await vscode.window.showOpenDialog({
+        canSelectFiles: true,
+        canSelectFolders: false,
+        canSelectMany: true,
+        defaultUri: root?.uri,
+        openLabel: "Attach to NIM Agent",
+        title: "Attach files to chat context"
+      });
+      picked = result ?? [];
+    }
+    if (picked.length === 0) return;
+
+    let added = 0;
+    for (const uri of picked) {
+      try {
+        const stat = await vscode.workspace.fs.stat(uri);
+        if (stat.type !== vscode.FileType.File) continue;
+        const rel = vscode.workspace.asRelativePath(uri, false);
+        if (!this.attachedFiles.has(rel)) {
+          this.attachedFiles.add(rel);
+          added++;
+        }
+      } catch { /* skip unreadable */ }
+    }
+    if (added > 0) this.post({ type: "info", payload: `Attached ${added} file${added === 1 ? "" : "s"}` });
+    this.refreshState();
   }
 
   private defaultAgent(): AgentRole { return vscode.workspace.getConfiguration("nimAgent").get("defaultAgent", "chat") as AgentRole; }
