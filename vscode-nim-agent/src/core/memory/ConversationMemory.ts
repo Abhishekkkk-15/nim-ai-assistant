@@ -48,6 +48,23 @@ export class ConversationMemory {
     this.turns = [];
   }
 
+  /**
+   * Seeds the memory with a list of messages (useful for loading history).
+   * It wraps the messages into a single legacy turn.
+   */
+  seed(messages: ChatMessage[]): void {
+    this.clear();
+    if (messages.length > 0) {
+      this.add({
+        id: "seed",
+        agent: "history",
+        model: "unknown",
+        messages,
+        createdAt: Date.now()
+      });
+    }
+  }
+
   size(): number {
     return this.turns.length;
   }

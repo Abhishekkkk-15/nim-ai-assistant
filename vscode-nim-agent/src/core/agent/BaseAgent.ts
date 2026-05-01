@@ -130,6 +130,7 @@ export abstract class BaseAgent {
       let usage: any = undefined;
       
       if (streaming && input.onToken) {
+        const isPlan = this.store.chatProvider?.isPlanMode() ?? input.planMode;
         const result = await provider.chatStream(
           { model, messages, temperature, maxTokens, stream: true },
           {

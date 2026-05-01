@@ -35,28 +35,20 @@ export class GitManagerTool extends BaseTool {
 
   async execute(input: Record<string, unknown>): Promise<ToolResult> {
     const action = String(input.action);
-
     const folders = vscode.workspace.workspaceFolders;
-    if (!folders || folders.length === 0) {
-      return { ok: false, output: "No workspace folder open." };
-    }
+    if (!folders || folders.length === 0) return { ok: false, output: "No workspace folder open." };
     const cwd = folders[0].uri.fsPath;
 
     try {
       if (action === "status") {
-        const out = await this.execCommand("git status -s", cwd);
+        const out = await this.runGit(["status", "-s"], cwd);
         return { ok: true, output: out || "No changes (working tree clean)." };
       }
 
       if (action === "diff") {
-        let out = await this.execCommand("git diff HEAD", cwd);
-        if (!out.trim()) {
-          out = await this.execCommand("git diff", cwd); // Check unstaged if HEAD diff is empty
-        }
-        
-        if (out.length > 50000) {
-          out = out.substring(0, 50000) + "\n...[Diff Truncated]";
-        }
+        let out = await this.runGit(["diff", "HEAD"], cwd);
+        if (!out.trim()) out = await this.runGit(["diff"], cwd);
+        if (out.length > 50000) out = out.substring(0, 50000) + "\n...[Diff Truncated]";
         return { ok: true, output: out || "No diff available." };
       }
 
@@ -64,20 +56,11 @@ export class GitManagerTool extends BaseTool {
         const type = input.commitType as string;
         const scope = input.commitScope ? `(${input.commitScope})` : "";
         const message = input.commitMessage as string;
-
-        if (!type || !message) {
-          return { ok: false, output: "commitType and commitMessage are strictly required for the 'commit' action." };
-        }
-
+        if (!type || !message) return { ok: false, output: "commitType and commitMessage are required." };
         const formattedMessage = `${type}${scope}: ${message}`;
         
-        // Add all and commit
-        await this.execCommand("git add .", cwd);
-        
-        // Escape double quotes in message
-        const escapedMsg = formattedMessage.replace(/"/g, '\\"');
-        const out = await this.execCommand(`git commit -m "${escapedMsg}"`, cwd);
-        
+        await this.runGit(["add", "."], cwd);
+        const out = await this.runGit(["commit", "-m", formattedMessage], cwd);
         return { ok: true, output: `Successfully committed:\n${out}` };
       }
 
@@ -87,14 +70,15 @@ export class GitManagerTool extends BaseTool {
     }
   }
 
-  private execCommand(cmd: string, cwd: string): Promise<string> {
+  private runGit(args: string[], cwd: string): Promise<string> {
     return new Promise((resolve, reject) => {
-      cp.exec(cmd, { cwd }, (error, stdout, stderr) => {
-        if (error) {
-          reject(new Error(`Command failed: ${error.message}\n${stderr}`));
-        } else {
-          resolve(stdout.trim());
-        }
+      const proc = cp.spawn("git", args, { cwd, shell: true });
+      let stdout = "", stderr = "";
+      proc.stdout.on("data", data => stdout += data.toString());
+      proc.stderr.on("data", data => stderr += data.toString());
+      proc.on("close", code => {
+        if (code === 0) resolve(stdout.trim());
+        else reject(new Error(`Git command failed (exit ${code}): ${stderr.trim() || stdout.trim()}`));
       });
     });
   }

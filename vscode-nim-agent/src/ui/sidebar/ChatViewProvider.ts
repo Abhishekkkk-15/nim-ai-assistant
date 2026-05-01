@@ -95,10 +95,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         if (msg.sessionId) {
           const session = await this.store.historyManager.loadSession(msg.sessionId);
           if (session) {
-            this.store.memory.clear();
-            // Load messages into current memory
-            session.messages.forEach(m => this.store.memory.add({ role: m.role, content: m.content }));
-            this.post({ type: "session_loaded", payload: { messages: session.messages } });
+            const msgs = session.messages || [];
+            this.store.memory.seed(msgs);
+            this.post({ type: "session_loaded", payload: { messages: msgs } });
             this.refreshState();
           }
         }
@@ -144,10 +143,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private async runPrompt(prompt: string, agentRole?: AgentRole): Promise<void> {
     const role = agentRole || "chat";
     const agent = this.store.agentRegistry.get(role);
-    
-    // Save user message to history
     await this.store.historyManager.appendMessage({ role: "user", content: prompt });
-    
     this.post({ type: "user", payload: prompt });
     this.post({ type: "assistant_start", payload: { agent: role } });
     this.currentAbort = new AbortController();
@@ -168,12 +164,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           return new Promise(res => this.permissionResolver = res);
         }
       });
-      
-      // Save assistant response to history
       await this.store.historyManager.appendMessage({ role: "assistant", content: result.content });
-      
       this.post({ type: "assistant_end", payload: { content: result.content } });
-      this.refreshState(); // Refresh sessions list in case title updated
+      this.refreshState();
     } catch (err) { this.post({ type: "error", payload: String(err) }); }
   }
 
@@ -227,10 +220,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       textarea { background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 12px; border-radius: 8px; resize: none; min-height: 50px; font-family: inherit; }
     </style></head><body>
       <div class="toolbar">
-        <button id="historyBtn" class="ghost" title="Chat History">📜</button>
+        <button id="historyBtn" class="ghost" title="History">📜</button>
         <button id="newChatBtn" class="ghost" title="New Chat">➕</button>
         <div style="flex:1"></div>
-        <select id="agentSel"></select><select id="modelSel"></select>
+        <button id="planBtn" class="ghost" title="Plan Mode">Plan</button>
+        <button id="autoBtn" class="ghost" title="Auto-permit">Auto</button>
+        <button id="reviewBtn" class="ghost" title="Review File">🛡️</button>
+        <button id="clearBtn" class="ghost" title="Clear All History">🗑️</button>
+        <select id="agentSel" style="width:70px"></select>
+        <select id="modelSel" style="width:100px"></select>
       </div>
       <div id="log"></div>
       <div id="historyOverlay" class="history-overlay">
@@ -257,9 +255,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         const modelSel = document.getElementById('modelSel');
         const sendBtn = document.getElementById('sendBtn');
         const cancelBtn = document.getElementById('cancelBtn');
-        const clearBtn = document.getElementById('clearBtn');
         const historyBtn = document.getElementById('historyBtn');
         const newChatBtn = document.getElementById('newChatBtn');
+        const planBtn = document.getElementById('planBtn');
+        const autoBtn = document.getElementById('autoBtn');
+        const reviewBtn = document.getElementById('reviewBtn');
+        const clearBtn = document.getElementById('clearBtn');
         const historyOverlay = document.getElementById('historyOverlay');
         const historyList = document.getElementById('historyList');
         const closeHistory = document.getElementById('closeHistory');
@@ -311,6 +312,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         sendBtn.onclick = () => { const t = input.value.trim(); if (t) { vscode.postMessage({ type: 'send', text: t, agent: agentSel.value, model: modelSel.value }); input.value = ''; } };
         historyBtn.onclick = () => { historyOverlay.style.display = historyOverlay.style.display === 'flex' ? 'none' : 'flex'; };
         newChatBtn.onclick = () => vscode.postMessage({ type: 'newChat' });
+        planBtn.onclick = () => vscode.postMessage({ type: 'togglePlanMode' });
+        autoBtn.onclick = () => vscode.postMessage({ type: 'toggleAutoPermit' });
+        reviewBtn.onclick = () => vscode.postMessage({ type: 'reviewFile' });
+        clearBtn.onclick = () => { if (confirm('Clear ALL history?')) vscode.postMessage({ type: 'clearMemory' }); };
         closeHistory.onclick = () => historyOverlay.style.display = 'none';
         cancelBtn.onclick = () => vscode.postMessage({ type: 'cancel' });
         input.onkeydown = e => { if (e.ctrlKey && e.key === 'Enter') sendBtn.click(); };
@@ -320,12 +325,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           if (m.type === 'state') {
             agentSel.innerHTML = m.payload.agents.map(a => '<option value="'+a.role+'"'+(a.role===m.payload.activeAgent?' selected':'')+'>'+a.label+'</option>').join('');
             modelSel.innerHTML = m.payload.models.map(m2 => '<option value="'+m2.name+'"'+(m2.name===m.payload.activeModel?' selected':'')+'>'+m2.name+'</option>').join('');
+            planBtn.className = m.payload.planMode ? 'active' : 'ghost';
+            autoBtn.className = m.payload.autoPermit ? 'active' : 'ghost';
             contextBar.innerHTML = m.payload.attachedFiles.map(p => '<div class="chip"><span>'+p+'</span><span data-action="pin" data-path="'+p+'">📌</span><span data-action="detach" data-path="'+p+'">×</span></div>').join('');
             pinnedList.innerHTML = m.payload.pinnedFiles.map(p => '<div class="chip"><span>'+p+'</span><span data-action="unpin" data-path="'+p+'">×</span></div>').join('');
             document.getElementById('contextBank').style.display = m.payload.pinnedFiles.length ? 'block' : 'none';
             historyList.innerHTML = m.payload.sessions.map(s => '<div class="history-item'+(s.id===m.payload.currentSessionId?' active':'')+'" data-id="'+s.id+'">'+s.title+'</div>').join('');
           } else if (m.type === 'session_loaded') {
-            log.innerHTML = ''; m.payload.messages.forEach(msg => renderMessage(msg.role, msg.content)); log.scrollTop = log.scrollHeight;
+            log.innerHTML = ''; const msgs = m.payload.messages || []; msgs.forEach(msg => renderMessage(msg.role, msg.content)); log.scrollTop = log.scrollHeight;
           } else if (m.type === 'user') {
             renderMessage('user', m.payload); log.scrollTop = log.scrollHeight;
           } else if (m.type === 'assistant_start') {
