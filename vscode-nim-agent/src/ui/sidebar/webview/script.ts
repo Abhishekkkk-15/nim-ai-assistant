@@ -120,12 +120,35 @@ const ChatLog = (() => {
     if (e) e.remove();
   }
 
-  function pushUser(text) {
+  function pushUser(payload) {
     removeEmptyState();
-    const node = MessageView.user(text);
+    let text = '';
+    let images;
+    if (payload && typeof payload === 'object') {
+      text = payload.text || '';
+      images = payload.images || [];
+    } else {
+      text = String(payload || '');
+    }
+    const node = MessageView.user(text, undefined, images);
     root.appendChild(node);
     scrollToEnd();
     return node;
+  }
+
+  function pushHandoffBanner(from, to, reason) {
+    removeEmptyState();
+    const node = el('div', { class: 'handoff-banner' }, [
+      el('span', { class: 'handoff-arrow' }, ['\u2192']),
+      el('span', { class: 'handoff-text' }, [
+        el('strong', {}, [from || '?']),
+        ' handed off to ',
+        el('strong', {}, [to || '?']),
+      ]),
+      reason ? el('span', { class: 'handoff-reason' }, [reason]) : null,
+    ]);
+    root.appendChild(node);
+    scrollToEnd();
   }
 
   function pushAssistantShell(agentLabel) {
@@ -167,22 +190,83 @@ const ChatLog = (() => {
     requestAnimationFrame(() => { root.scrollTop = root.scrollHeight; });
   }
 
-  return { clear, renderEmptyState, pushUser, pushAssistantShell, pushPermission, pushError, loadSession, scrollToEnd };
+  return { clear, renderEmptyState, pushUser, pushHandoffBanner, pushAssistantShell, pushPermission, pushError, loadSession, scrollToEnd };
 })();
+
+/* ============================================================
+   EditsPanel — multi-file diff review attached to assistant turn
+   ============================================================ */
+const EditsPanel = {
+  render(messageNode, edits) {
+    if (!messageNode) return;
+    // Remove any existing panel from this turn
+    const existing = messageNode.querySelector('.edits-panel');
+    if (existing) existing.remove();
+    if (!edits || edits.length === 0) return;
+
+    const totalAdds = edits.reduce((s, e) => s + (e.added || 0), 0);
+    const totalDels = edits.reduce((s, e) => s + (e.removed || 0), 0);
+
+    const list = el('div', { class: 'edits-list' });
+    for (const e of edits) {
+      const tag = e.created
+        ? el('span', { class: 'edit-tag new' }, ['NEW'])
+        : el('span', { class: 'edit-tag' }, ['MOD']);
+      const stats = el('span', { class: 'edit-stats' }, [
+        el('span', { class: 'add' }, ['+' + (e.added || 0)]),
+        el('span', { class: 'del' }, ['-' + (e.removed || 0)]),
+      ]);
+      const actions = el('span', { class: 'edit-actions' }, [
+        el('button', { class: 'code-action', dataset: { action: 'open-edit-diff', path: e.path } }, ['Diff']),
+        el('button', { class: 'code-action danger', dataset: { action: 'revert-edit', path: e.path } }, ['Revert']),
+      ]);
+      list.appendChild(el('div', { class: 'edit-row' }, [
+        tag,
+        el('span', { class: 'edit-path', title: e.path }, [e.path]),
+        stats,
+        actions,
+      ]));
+    }
+
+    const panel = el('div', { class: 'edits-panel' }, [
+      el('div', { class: 'edits-header' }, [
+        el('span', { class: 'edits-title' }, [
+          '\u{1F4DD} ' + edits.length + ' file' + (edits.length === 1 ? '' : 's') + ' changed',
+        ]),
+        el('span', { class: 'edits-totals' }, [
+          el('span', { class: 'add' }, ['+' + totalAdds]),
+          el('span', { class: 'del' }, ['-' + totalDels]),
+        ]),
+        el('button', { class: 'code-action danger', dataset: { action: 'revert-all-edits' } }, ['Revert all']),
+      ]),
+      list,
+    ]);
+    messageNode.appendChild(panel);
+  },
+};
 
 /* ============================================================
    MessageView — user / assistant message factory
    ============================================================ */
 const MessageView = {
-  user(text, time) {
+  user(text, time, images) {
     const t = time === undefined ? timeNow() : time;
-    return el('div', { class: 'msg user' }, [
-      el('div', { class: 'msg-meta' }, [
-        el('span', { class: 'role-pill user', html: '<span class="role-glyph"></span>You' }),
-        t ? el('span', { class: 'msg-time' }, [t]) : null,
-      ]),
-      el('div', { class: 'msg-body', html: formatBody(text) }),
+    const meta = el('div', { class: 'msg-meta' }, [
+      el('span', { class: 'role-pill user', html: '<span class="role-glyph"></span>You' }),
+      t ? el('span', { class: 'msg-time' }, [t]) : null,
     ]);
+    const body = el('div', { class: 'msg-body', html: formatBody(text) });
+    const node = el('div', { class: 'msg user' }, [meta, body]);
+    if (images && images.length) {
+      const strip = el('div', { class: 'msg-image-strip' });
+      for (const img of images) {
+        strip.appendChild(el('span', { class: 'msg-image-chip', title: img.name }, [
+          '\u{1F5BC}\uFE0F ' + (img.name || 'image')
+        ]));
+      }
+      node.appendChild(strip);
+    }
+    return node;
   },
 
   assistantShell(agentLabel) {
@@ -372,6 +456,7 @@ let activeMessage = null;        // current assistant message DOM node
 let activeBody = null;           // current assistant message body
 let activeStepByTool = new Map(); // map of tool name -> step DOM node (most recent)
 let lastStepNode = null;
+let lastTurnTail = null;         // last assistant message in current user turn (for edits panel)
 let stream = newStreamState();
 let hasEdits = false;
 
@@ -412,6 +497,20 @@ document.addEventListener('click', (e) => {
     Overlay.closeAll();
   } else if (action === 'reset-analytics') {
     vscode.postMessage({ type: 'clearAnalytics' });
+  } else if (action === 'open-edit-diff') {
+    vscode.postMessage({ type: 'openEditDiff', path: t.dataset.path });
+  } else if (action === 'revert-edit') {
+    vscode.postMessage({ type: 'revertEdit', path: t.dataset.path });
+  } else if (action === 'revert-all-edits') {
+    if (confirm('Revert ALL files changed in this turn?')) {
+      vscode.postMessage({ type: 'revertAllEdits' });
+    }
+  } else if (action === 'detach-image') {
+    vscode.postMessage({ type: 'detachImage', imageId: t.dataset.id });
+  } else if (action === 'open-rules') {
+    vscode.postMessage({ type: 'openRulesFile', text: t.dataset.name || '' });
+  } else if (action === 'create-rules') {
+    vscode.postMessage({ type: 'createRulesFile' });
   }
 });
 
@@ -432,10 +531,58 @@ $('#planBtn').addEventListener('click', () => vscode.postMessage({ type: 'toggle
 $('#autoBtn').addEventListener('click', () => vscode.postMessage({ type: 'toggleAutoPermit' }));
 $('#reviewBtn').addEventListener('click', () => vscode.postMessage({ type: 'reviewFile' }));
 $('#attachBtn').addEventListener('click', () => vscode.postMessage({ type: 'attachFile' }));
+$('#imageBtn').addEventListener('click', () => $('#imageFileInput').click());
+$('#rulesBtn').addEventListener('click', () => vscode.postMessage({ type: 'openRulesFile' }));
 $('#clearBtn').addEventListener('click', () => {
   if (confirm('Clear ALL chat history?')) vscode.postMessage({ type: 'clearMemory' });
 });
 $$('.overlay-close').forEach(b => b.addEventListener('click', () => Overlay.closeAll()));
+
+/* ============================================================
+   Image attach: file input, paste, drag-drop
+   ============================================================ */
+function readAndAttachImageFiles(files) {
+  for (const f of Array.from(files || [])) {
+    if (!f.type || !f.type.startsWith('image/')) continue;
+    const reader = new FileReader();
+    reader.onload = () => {
+      vscode.postMessage({
+        type: 'attachImage',
+        imageDataUrl: String(reader.result || ''),
+        imageName: f.name || ('pasted-' + Date.now() + '.png'),
+      });
+    };
+    reader.readAsDataURL(f);
+  }
+}
+$('#imageFileInput').addEventListener('change', (e) => {
+  readAndAttachImageFiles(e.target.files);
+  e.target.value = '';
+});
+const inputEl = $('#input');
+inputEl.addEventListener('paste', (e) => {
+  const items = e.clipboardData ? e.clipboardData.items : null;
+  if (!items) return;
+  const files = [];
+  for (const it of items) {
+    if (it.kind === 'file') {
+      const f = it.getAsFile();
+      if (f && f.type.startsWith('image/')) files.push(f);
+    }
+  }
+  if (files.length > 0) {
+    e.preventDefault();
+    readAndAttachImageFiles(files);
+  }
+});
+inputEl.addEventListener('dragover', (e) => { if (e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.indexOf('Files') !== -1) { e.preventDefault(); inputEl.classList.add('drag'); } });
+inputEl.addEventListener('dragleave', () => inputEl.classList.remove('drag'));
+inputEl.addEventListener('drop', (e) => {
+  if (!e.dataTransfer || !e.dataTransfer.files || e.dataTransfer.files.length === 0) return;
+  e.preventDefault();
+  inputEl.classList.remove('drag');
+  readAndAttachImageFiles(e.dataTransfer.files);
+});
 
 /* ============================================================
    Inbound message router
@@ -448,12 +595,14 @@ window.addEventListener('message', (e) => {
     case 'session_loaded': {
       ChatLog.loadSession(m.payload.messages || []);
       activeMessage = null; activeBody = null; activeStepByTool.clear(); lastStepNode = null;
+      lastTurnTail = null;
       stream = newStreamState();
       StatusIndicator.set('idle', '');
       Composer.showCancel(false);
       return;
     }
     case 'user': {
+      lastTurnTail = null;
       ChatLog.pushUser(m.payload);
       return;
     }
@@ -485,6 +634,19 @@ window.addEventListener('message', (e) => {
         ]);
         activeBody.appendChild(row);
       }
+      // Remember which assistant message owns the edits panel for this turn.
+      lastTurnTail = activeMessage;
+      return;
+    }
+    case 'handoff': {
+      const p = m.payload || {};
+      ChatLog.pushHandoffBanner(p.from, p.to, p.reason);
+      return;
+    }
+    case 'edits_summary': {
+      const target = lastTurnTail || activeMessage;
+      EditsPanel.render(target, (m.payload && m.payload.edits) || []);
+      ChatLog.scrollToEnd();
       return;
     }
     case 'permission_request': {
@@ -525,6 +687,30 @@ function handleState(p) {
   // Toggle states
   $('#planBtn').classList.toggle('active', !!p.planMode);
   $('#autoBtn').classList.toggle('active', !!p.autoPermit);
+
+  // Workspace rules indicator
+  const rulesBtn = $('#rulesBtn');
+  const rules = p.workspaceRules || [];
+  if (rules.length > 0) {
+    rulesBtn.classList.add('active');
+    rulesBtn.title = 'Workspace rules loaded: ' + rules.join(', ') + ' (click to open)';
+    rulesBtn.textContent = 'RULES \u2022 ' + rules.length;
+  } else {
+    rulesBtn.classList.remove('active');
+    rulesBtn.title = 'No workspace rules. Click to create AGENTS.md.';
+    rulesBtn.textContent = 'RULES';
+  }
+
+  // Attached images
+  const imgRow = $('#attachedImages');
+  const imgs = p.attachedImages || [];
+  imgRow.innerHTML = imgs.map(img =>
+    '<span class="img-chip" title="' + escapeHtml(img.name) + ' (' + Math.round((img.size || 0) / 1024) + ' KB)">' +
+      '<span class="img-glyph">\u{1F5BC}\uFE0F</span>' +
+      '<span class="img-name">' + escapeHtml(img.name) + '</span>' +
+      '<span class="chip-action" data-action="detach-image" data-id="' + escapeHtml(img.id) + '" title="Remove">\u00D7</span>' +
+    '</span>'
+  ).join('');
 
   // Attached + pinned files
   $('#attachedFiles').innerHTML = (p.attachedFiles || []).map(path =>

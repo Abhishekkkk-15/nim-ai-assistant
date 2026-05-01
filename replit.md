@@ -34,6 +34,10 @@ A standalone VS Code extension implementing a Cursor-style agentic coding assist
 - Modular agent system: Chat / Coder / Debug / Refactor agents over a shared JSON-action loop.
 - Pluggable tools: file read/write, terminal, workspace search.
 - Sidebar webview chat with agent + model dropdowns.
+- **Multi-file diff review** — `EditTracker` snapshots files touched per turn; the chat shows a per-turn panel listing changed files with +/- line counts and per-file Diff / Revert / Revert-all actions.
+- **Agent-to-agent handoff** — `HandOffTool` lets any agent emit a `__HANDOFF__` marker; the chat view runs a handoff loop (max 4 hops, no revisits) across `chat / coder / debugger / refactor / security / tester`, showing an inline banner for each hop.
+- **Workspace rules file** — `RulesLoader` auto-discovers `AGENTS.md`, `.nimrules`, and `.cursorrules` at the workspace root, watches for changes, and injects them into every agent's system prompt. A `RULES` button in the chat header indicates active rule files and opens / creates them.
+- **Image / screenshot input** — Users can attach images via button, paste, or drag-drop; images are sent as `image_url` content parts (data URLs) to vision-capable NIM models. Limits: 6 MB per image, 6 images per message; cache is bypassed when images are attached.
 - See `vscode-nim-agent/README.md` for full architecture, configuration, and install instructions.
 
 See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.

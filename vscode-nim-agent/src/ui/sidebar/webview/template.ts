@@ -61,6 +61,7 @@ export function renderChatHtml(webview: vscode.Webview): string {
         <span class="dot-sep"></span>
         <span class="select-wrap"><select id="modelSel" aria-label="Model"></select></span>
         <div class="spacer"></div>
+        <button id="rulesBtn" class="icon-btn rules-btn" title="Workspace rules" aria-label="Workspace rules" style="width:auto; padding:0 8px; font-size: var(--sz-xs); font-weight:600; letter-spacing:.04em;">RULES</button>
         <button id="planBtn" class="icon-btn" title="Plan-only mode" aria-label="Plan mode" style="width:auto; padding:0 8px; font-size: var(--sz-xs); font-weight:600; letter-spacing:.04em;">PLAN</button>
         <button id="autoBtn" class="icon-btn" title="Auto-approve tool use" aria-label="Auto-permit" style="width:auto; padding:0 8px; font-size: var(--sz-xs); font-weight:600; letter-spacing:.04em;">AUTO</button>
       </div>
@@ -73,14 +74,19 @@ export function renderChatHtml(webview: vscode.Webview): string {
     <footer class="composer">
       <div id="pinnedFiles" class="attached-files" aria-label="Pinned files"></div>
       <div id="attachedFiles" class="attached-files" aria-label="Attached files"></div>
+      <div id="attachedImages" class="attached-images" aria-label="Attached images"></div>
 
       <div class="input-shell">
-        <textarea id="input" class="input" rows="1" placeholder="Ask NIM Agent\u2026" aria-label="Message"></textarea>
+        <textarea id="input" class="input" rows="1" placeholder="Ask NIM Agent — paste an image, drop files, or type\u2026" aria-label="Message"></textarea>
+        <input type="file" id="imageFileInput" accept="image/*" multiple style="display:none" />
       </div>
 
       <div class="composer-row">
         <button id="attachBtn" class="icon-btn" title="Attach files to context" aria-label="Attach files">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 7 7 11.5a2.5 2.5 0 1 1-3.5-3.5l5-5a3.5 3.5 0 1 1 5 5L8 13.5"/></svg>
+        </button>
+        <button id="imageBtn" class="icon-btn" title="Attach image / screenshot" aria-label="Attach image">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="6" cy="7" r="1.2"/><path d="M2 11l3.5-3.5 3 3 2-2L14 11"/></svg>
         </button>
         <div id="status" class="status" data-state="idle">
           <span class="status-dot"></span>

@@ -20,6 +20,8 @@ import { ConversationMemory } from "./core/memory/ConversationMemory";
 import { LocalCache } from "./core/memory/LocalCache";
 import { AgentRegistry } from "./core/agent/AgentRegistry";
 import { ContextManager } from "./core/context/ContextManager";
+import { RulesLoader } from "./core/context/RulesLoader";
+import { HandOffTool } from "./core/tools/HandOffTool";
 import { HistoryManager } from "./core/memory/HistoryManager";
 import { AnalyticsManager } from "./core/memory/AnalyticsManager";
 import { registerInlineEditCommand } from "./commands/InlineEditCommand";
@@ -68,6 +70,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const contextManager = new ContextManager(context);
   store.contextManager = contextManager;
 
+  const rulesLoader = new RulesLoader();
+  store.rulesLoader = rulesLoader;
+  context.subscriptions.push(rulesLoader);
+
   const historyManager = new HistoryManager(context);
   store.historyManager = historyManager;
 
@@ -84,6 +90,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   toolRegistry.register(new GitManagerTool());
   toolRegistry.register(new ReplaceInFileTool());
   toolRegistry.register(new ReplaceFileContentTool());
+  toolRegistry.register(new HandOffTool());
   store.toolRegistry = toolRegistry;
 
   // Agents

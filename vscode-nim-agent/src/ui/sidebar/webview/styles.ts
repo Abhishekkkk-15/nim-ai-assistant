@@ -807,4 +807,163 @@ textarea.input::placeholder { color: var(--text-faint); }
 .pinned .chip {
   background: color-mix(in srgb, var(--accent) 12%, var(--bg-raised));
 }
+
+/* ===========================
+   Workspace rules indicator
+   =========================== */
+#rulesBtn.active {
+  background: color-mix(in srgb, var(--accent) 18%, var(--bg-raised));
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+}
+
+/* ===========================
+   Attached image chips
+   =========================== */
+.attached-images {
+  padding: var(--space-2) var(--space-4) 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.attached-images:empty { display: none; }
+.img-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-raised));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-size: var(--sz-xs);
+  max-width: 220px;
+}
+.img-chip .img-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 140px;
+}
+.img-chip .chip-action {
+  cursor: pointer;
+  opacity: 0.6;
+  font-weight: 700;
+  padding: 0 2px;
+}
+.img-chip .chip-action:hover { opacity: 1; color: var(--danger, #d33); }
+
+/* Inline image strip inside user message bubble */
+.msg-image-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.msg-image-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-radius: 10px;
+  font-size: var(--sz-xs);
+  color: var(--text-muted);
+}
+
+/* Drag-over highlight on textarea */
+#input.drag {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+
+/* ===========================
+   Multi-file edits review panel
+   =========================== */
+.edits-panel {
+  margin-top: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-sunken);
+  overflow: hidden;
+}
+.edits-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 8px var(--space-3);
+  background: color-mix(in srgb, var(--accent) 8%, var(--bg-raised));
+  border-bottom: 1px solid var(--border);
+  font-size: var(--sz-sm);
+}
+.edits-title { font-weight: 600; flex: 1; }
+.edits-totals { display: inline-flex; gap: 8px; font-family: var(--mono, ui-monospace, monospace); font-size: var(--sz-xs); }
+.edits-totals .add { color: #4caf50; }
+.edits-totals .del { color: #ef5350; }
+.edits-list { display: flex; flex-direction: column; }
+.edit-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px var(--space-3);
+  font-size: var(--sz-xs);
+  border-bottom: 1px solid var(--border);
+}
+.edit-row:last-child { border-bottom: none; }
+.edit-tag {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.edit-tag.new { background: color-mix(in srgb, #4caf50 22%, transparent); color: #4caf50; }
+.edit-path {
+  flex: 1;
+  font-family: var(--mono, ui-monospace, monospace);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.edit-stats { display: inline-flex; gap: 6px; font-family: var(--mono, ui-monospace, monospace); }
+.edit-stats .add { color: #4caf50; }
+.edit-stats .del { color: #ef5350; }
+.edit-actions { display: inline-flex; gap: 4px; }
+.code-action {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+  color: var(--text);
+  cursor: pointer;
+}
+.code-action:hover { background: color-mix(in srgb, var(--accent) 14%, var(--bg-raised)); }
+.code-action.danger:hover { background: color-mix(in srgb, #ef5350 22%, var(--bg-raised)); color: #ef5350; }
+
+/* ===========================
+   Handoff banner
+   =========================== */
+.handoff-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: var(--space-3) var(--space-4);
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-raised));
+  border: 1px dashed color-mix(in srgb, var(--accent) 45%, var(--border));
+  font-size: var(--sz-sm);
+}
+.handoff-banner .handoff-arrow {
+  color: var(--accent);
+  font-weight: 700;
+}
+.handoff-banner .handoff-text strong { color: var(--accent); }
+.handoff-banner .handoff-reason {
+  color: var(--text-muted);
+  font-size: var(--sz-xs);
+  font-style: italic;
+}
 `;

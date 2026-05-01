@@ -1,6 +1,15 @@
+/**
+ * A single part of a multimodal user message. Mirrors the OpenAI / NVIDIA NIM
+ * vision content schema so the request body can be passed through unchanged.
+ */
+export type MessageContentPart =
+  | { type: "text"; text: string }
+  | { type: "image_url"; image_url: { url: string; detail?: "low" | "high" | "auto" } };
+
 export interface ChatMessage {
   role: "system" | "user" | "assistant" | "tool";
-  content: string;
+  /** Plain string for text-only messages, or an array of parts for multimodal input. */
+  content: string | MessageContentPart[];
   name?: string;
   tool_call_id?: string;
 }

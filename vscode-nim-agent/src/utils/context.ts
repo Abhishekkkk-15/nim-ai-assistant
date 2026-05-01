@@ -9,6 +9,7 @@ import type { LocalCache } from "../core/memory/LocalCache";
 import type { AgentRegistry } from "../core/agent/AgentRegistry";
 import type { ChatViewProvider } from "../ui/sidebar/ChatViewProvider";
 import type { ContextManager } from "../core/context/ContextManager";
+import type { RulesLoader } from "../core/context/RulesLoader";
 import type { HistoryManager } from "../core/memory/HistoryManager";
 import { AnalyticsManager } from "../core/memory/AnalyticsManager";
 
@@ -28,6 +29,7 @@ export class ExtensionContextStore {
   agentRegistry!: AgentRegistry;
   chatProvider!: ChatViewProvider;
   contextManager!: ContextManager;
+  rulesLoader!: RulesLoader;
   historyManager!: HistoryManager;
   analyticsManager!: AnalyticsManager;
 }

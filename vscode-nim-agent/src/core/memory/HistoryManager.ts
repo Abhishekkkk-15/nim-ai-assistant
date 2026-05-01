@@ -49,7 +49,13 @@ export class HistoryManager {
             session.updatedAt = Date.now();
             // Simple title generation if it's the first user message
             if (session.title === 'New Chat' && message.role === 'user') {
-                session.title = message.content.substring(0, 30) + (message.content.length > 30 ? '...' : '');
+                const text = typeof message.content === 'string'
+                    ? message.content
+                    : message.content
+                        .filter((p: any) => p && p.type === 'text' && typeof p.text === 'string')
+                        .map((p: any) => p.text)
+                        .join(' ');
+                session.title = text.substring(0, 30) + (text.length > 30 ? '...' : '');
             }
             await this.save();
         }

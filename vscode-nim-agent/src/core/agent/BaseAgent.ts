@@ -1,16 +1,24 @@
 import * as vscode from "vscode";
 import * as path from "path";
-import type { ChatMessage } from "../../api/BaseProvider";
+import type { ChatMessage, MessageContentPart } from "../../api/BaseProvider";
 import type { ExtensionContextStore } from "../../utils/context";
 import type { ToolResult } from "../tools/BaseTool";
 
 export type AgentRole = "chat" | "coder" | "debugger" | "refactor" | "security" | "tester";
+
+export interface AgentImageInput {
+  /** Data URL (data:image/png;base64,...) or plain http(s) URL. */
+  url: string;
+  detail?: "low" | "high" | "auto";
+}
 
 export interface AgentRunInput {
   prompt: string;
   context?: AgentContext;
   modelOverride?: string;
   planMode?: boolean;
+  /** Optional images to attach to the user message (vision input). */
+  images?: AgentImageInput[];
   signal?: AbortSignal;
   onToken?: (token: string) => void;
   onStep?: (step: AgentStep) => void;
@@ -89,18 +97,20 @@ export abstract class BaseAgent {
 
     const steps: AgentStep[] = [];
     const messages: ChatMessage[] = [];
-    messages.push({ role: "system", content: this.buildSystemPrompt(input.context) });
+    messages.push({ role: "system", content: await this.buildSystemPrompt(input.context) });
 
     // Conversational memory
     const history = this.store.memory.asMessages(8);
     if (history.length > 0) {
       messages.push(...history);
     }
-    messages.push({ role: "user", content: input.prompt });
+    messages.push({ role: "user", content: this.buildUserContent(input) });
 
-    // Cheap cache for identical (model + prompt) pairs.
+    // Cheap cache for identical (model + prompt) pairs. Skip when images are
+    // attached because the cache key is text-only.
     const cacheKey = `${model}::${input.prompt}`;
-    if (cacheEnabled) {
+    const useCache = cacheEnabled && !(input.images && input.images.length > 0);
+    if (useCache) {
       const cached = this.store.cache.get(cacheKey);
       if (cached) {
         steps.push({ type: "final", payload: cached });
@@ -263,10 +273,11 @@ export abstract class BaseAgent {
     }
 
     if (!finalContent && steps.length > 0) {
-      finalContent = messages[messages.length - 1].content;
+      const last = messages[messages.length - 1].content;
+      finalContent = typeof last === "string" ? last : "";
     }
 
-    if (cacheEnabled) {
+    if (useCache) {
       this.store.cache.set(cacheKey, finalContent);
     }
 
@@ -294,16 +305,17 @@ export abstract class BaseAgent {
 
   // ----- prompt helpers -----
 
-  private buildSystemPrompt(ctx?: AgentContext): string {
+  private async buildSystemPrompt(ctx?: AgentContext): Promise<string> {
     const tools = this.store.toolRegistry.describeForPrompt();
     const allowed = this.allowedTools();
     const allowedNote = allowed
       ? `You may ONLY use these tools: ${allowed.join(", ")}.`
       : "You may use any of the listed tools.";
-    
+
     const contextBank = this.store.contextManager?.formatForPrompt() || "";
+    const workspaceRules = this.store.rulesLoader ? await this.store.rulesLoader.getPromptBlock() : "";
     const autoPermit = this.store.chatProvider?.isAutoPermit() ? "\nIMPORTANT: Auto-permit mode is ACTIVE. You are authorized to modify files DIRECTLY and IMMEDIATELY using tools like write_file, replace_file_content, or multi_replace_file_content. Do NOT waste time proposing edits; just apply the fix." : "";
-    const ctxBlock = (ctx ? this.formatContext(ctx) : "(no editor context provided)") + "\n" + contextBank + autoPermit;
+    const ctxBlock = (ctx ? this.formatContext(ctx) : "(no editor context provided)") + "\n" + contextBank + workspaceRules + autoPermit;
 
     let planInstruction = "";
     if (this.store.chatProvider?.isPlanMode()) {
@@ -385,6 +397,26 @@ ${ctxBlock}`;
       }
     }
     return parts.length ? parts.join("\n\n") : "(no editor context provided)";
+  }
+
+  /**
+   * Builds the user message content. When images are attached we return a
+   * parts array (text + image_url entries) compatible with the OpenAI / NIM
+   * vision schema; otherwise we return the prompt as a plain string.
+   */
+  private buildUserContent(input: AgentRunInput): string | MessageContentPart[] {
+    if (!input.images || input.images.length === 0) {
+      return input.prompt;
+    }
+    const parts: MessageContentPart[] = [{ type: "text", text: input.prompt }];
+    for (const img of input.images) {
+      if (!img?.url) continue;
+      parts.push({
+        type: "image_url",
+        image_url: { url: img.url, detail: img.detail ?? "auto" },
+      });
+    }
+    return parts;
   }
 
   private toolResultPrompt(name: string, result: ToolResult): string {
