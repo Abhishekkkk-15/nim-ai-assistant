@@ -82,6 +82,15 @@ export class ProviderRegistry {
     return provider;
   }
 
+  get(id: string): BaseProvider {
+    const provider = this.providers.get(id);
+    if (!provider) {
+      // Fallback to active if the specific provider isn't loaded/found
+      return this.active();
+    }
+    return provider;
+  }
+
   setActive(id: string): void {
     if (!this.providers.has(id)) {
       throw new Error(`Unknown provider: ${id}`);

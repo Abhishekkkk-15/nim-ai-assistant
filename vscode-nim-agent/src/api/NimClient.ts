@@ -263,6 +263,8 @@ export class NimClient extends BaseProvider {
         // If it's a stream (common in chatStream errors), don't stringify it
         if (body.constructor?.name === "IncomingMessage" || body.readable) {
           detail = "Stream error (see logs for details)";
+        } else if (body.detail && typeof body.detail === "string" && body.detail.includes("DEGRADED function")) {
+          detail = `The selected model is currently unavailable or degraded on NVIDIA NIM: ${body.detail}. Please select a different model.`;
         } else {
           detail = body.error?.message ?? body.message ?? JSON.stringify(body);
         }
