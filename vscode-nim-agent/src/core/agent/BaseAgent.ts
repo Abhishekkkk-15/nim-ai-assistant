@@ -4,7 +4,7 @@ import type { ChatMessage, MessageContentPart } from "../../api/BaseProvider";
 import type { ExtensionContextStore } from "../../utils/context";
 import type { ToolResult } from "../tools/BaseTool";
 
-export type AgentRole = "chat" | "coder" | "debugger" | "refactor" | "security" | "tester";
+export type AgentRole = "chat" | "coder" | "debugger" | "refactor" | "security" | "tester" | "supervisor" | "reviewer";
 
 export interface AgentImageInput {
   /** Data URL (data:image/png;base64,...) or plain http(s) URL. */

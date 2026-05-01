@@ -35,6 +35,8 @@ import { registerInlineEditCommand } from "./commands/InlineEditCommand";
 import { registerErrorHealer } from "./providers/ErrorHealerProvider";
 import { ChatAssistantAgent } from "./core/agent/ChatAssistantAgent";
 import { CodeGeneratorAgent } from "./core/agent/CodeGeneratorAgent";
+import { SupervisorAgent } from "./core/agent/SupervisorAgent";
+import { ReviewerAgent } from "./core/agent/ReviewerAgent";
 import { DebugAgent } from "./core/agent/DebugAgent";
 import { RefactorAgent } from "./core/agent/RefactorAgent";
 import { SecurityAuditorAgent } from "./core/agent/SecurityAuditorAgent";
@@ -115,6 +117,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const agentRegistry = new AgentRegistry();
   agentRegistry.register(new ChatAssistantAgent(store));
   agentRegistry.register(new CodeGeneratorAgent(store));
+  agentRegistry.register(new SupervisorAgent(store));
+  agentRegistry.register(new ReviewerAgent(store));
   agentRegistry.register(new DebugAgent(store));
   agentRegistry.register(new RefactorAgent(store));
   agentRegistry.register(new SecurityAuditorAgent(store));

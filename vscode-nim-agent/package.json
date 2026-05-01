@@ -216,7 +216,7 @@
         "nimAgent.defaultAgent": {
           "type": "string",
           "default": "chat",
-          "enum": ["chat", "coder", "debugger", "refactor"],
+          "enum": ["chat", "coder", "debugger", "refactor", "supervisor", "reviewer"],
           "description": "Default agent role."
         },
         "nimAgent.maxAgentSteps": {

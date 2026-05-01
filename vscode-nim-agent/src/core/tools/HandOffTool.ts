@@ -11,7 +11,7 @@ import { BaseTool, ToolDefinition, ToolResult } from "./BaseTool";
  */
 export const HANDOFF_MARKER = "__HANDOFF__";
 
-export const VALID_HANDOFF_ROLES = ["chat", "coder", "debugger", "refactor", "security", "tester"] as const;
+export const VALID_HANDOFF_ROLES = ["chat", "coder", "debugger", "refactor", "security", "tester", "supervisor", "reviewer"] as const;
 
 export class HandOffTool extends BaseTool {
   definition(): ToolDefinition {
@@ -19,12 +19,12 @@ export class HandOffTool extends BaseTool {
       name: "hand_off",
       description:
         "Transfer control of the conversation to a more specialized agent. " +
-        "Use when the current agent is the wrong fit for the next step (e.g. coder hits an unexplained bug -> hand off to debugger). " +
-        "Valid 'to' values: chat, coder, debugger, refactor, security, tester.",
+        "Use when the current agent is the wrong fit for the next step. " +
+        "Valid 'to' values: chat, coder, debugger, refactor, security, tester, supervisor, reviewer.",
       input: {
         type: "object",
         properties: {
-          to: { type: "string", description: "Role to hand off to. One of: chat, coder, debugger, refactor, security, tester." },
+          to: { type: "string", description: "Role to hand off to. One of: chat, coder, debugger, refactor, security, tester, supervisor, reviewer." },
           reason: { type: "string", description: "Short explanation of why the handoff is needed." },
           followUp: { type: "string", description: "Optional. The exact prompt to send to the next agent. If omitted, the original prompt is reused with the reason as preamble." }
         },

@@ -75,7 +75,7 @@ interface OutboundMessage {
 
 const MAX_IMAGE_BYTES = 6 * 1024 * 1024; // 6 MB per image
 const MAX_TOTAL_IMAGES = 6;
-const MAX_HANDOFFS = 4;
+const MAX_HANDOFFS = 10;
 
 export class ChatViewProvider implements vscode.WebviewViewProvider {
   static readonly viewType = "nimAgent.chatView";
@@ -362,7 +362,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         await this.store.historyManager.appendMessage({ role: "assistant", content: displayContent });
         this.post({ type: "assistant_end", payload: { content: displayContent, agent: role } });
 
-        if (handoff && handoffCount < MAX_HANDOFFS && !visited.has(handoff.to)) {
+        if (handoff && handoffCount < MAX_HANDOFFS) {
           handoffCount++;
           const nextRole = handoff.to;
           this.post({ type: "handoff", payload: { from: role, to: nextRole, reason: handoff.reason } });
