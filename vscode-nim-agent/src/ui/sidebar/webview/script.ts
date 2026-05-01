@@ -1278,6 +1278,10 @@ function handleState(p) {
         '</div>'
       ).join('')
     : '<div class="history-empty">No saved chats yet.</div>';
+
+  if (p.currentSessionMessages) {
+    ChatLog.loadSession(p.currentSessionMessages);
+  }
 }
 
 function handleAnalytics(payload) {

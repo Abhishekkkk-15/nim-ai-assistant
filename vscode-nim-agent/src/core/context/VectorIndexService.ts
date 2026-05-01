@@ -41,6 +41,7 @@ export class VectorIndexService {
       fs.writeFileSync(merklePath, this.store.merkleTree.serialize(), "utf8");
 
       this.ready = true;
+      this.store.refreshState?.();
       this.store.logger.info(
         `Indexing complete. ${this.vectorStore.size()} chunks indexed across ${this.indexedFiles} files.`
       );
@@ -97,7 +98,7 @@ export class VectorIndexService {
     try {
       const provider = this.store.providerRegistry.active();
       const chunkTexts = chunks.map((chunk) => chunk.chunk);
-      const embeddings = await provider.embeddings(this.EMBEDDING_MODEL, chunkTexts);
+      const embeddings = await provider.embeddings(this.EMBEDDING_MODEL, chunkTexts, { input_type: "passage" });
       const entries: VectorChunkEntry[] = [];
 
       for (let i = 0; i < chunkTexts.length; i++) {
@@ -145,7 +146,7 @@ export class VectorIndexService {
   ): Promise<{ path: string; chunk: string; score: number; startLine: number; endLine: number }[]> {
     if (this.vectorStore.size() === 0) return [];
     const provider = this.store.providerRegistry.active();
-    const [queryEmbedding] = await provider.embeddings(this.EMBEDDING_MODEL, [query]);
+    const [queryEmbedding] = await provider.embeddings(this.EMBEDDING_MODEL, [query], { input_type: "query" });
 
     const results = this.vectorStore.all().map((entry) => ({
       path: entry.path,

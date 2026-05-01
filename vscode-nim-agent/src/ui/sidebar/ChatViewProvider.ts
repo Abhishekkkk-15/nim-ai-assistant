@@ -137,6 +137,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         pinnedFiles: this.store.contextManager.getAll().map(f => f.path),
         sessions: this.store.historyManager.getSessions().map(s => ({ id: s.id, title: s.title })),
         currentSessionId: this.store.historyManager.getCurrentSessionId(),
+        currentSessionMessages: this.store.memory.asMessages(1000),
         workspaceRules: this.workspaceRules
       }
     });
@@ -153,6 +154,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private async handleMessage(msg: InboundMessage): Promise<void> {
     switch (msg.type) {
       case "ready":
+        this.refreshState();
         await this.refreshRules();
         this.refreshState();
         return;

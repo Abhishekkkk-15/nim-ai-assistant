@@ -54,5 +54,5 @@ export abstract class BaseProvider {
     signal?: AbortSignal
   ): Promise<CompletionResult>;
 
-  abstract embeddings(model: string, input: string[], signal?: AbortSignal): Promise<number[][]>;
+  abstract embeddings(model: string, input: string[], options?: { input_type?: "query" | "passage" }, signal?: AbortSignal): Promise<number[][]>;
 }

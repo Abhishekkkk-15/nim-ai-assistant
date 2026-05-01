@@ -131,11 +131,11 @@ export class NimClient extends BaseProvider {
     }, req);
   }
 
-  async embeddings(model: string, input: string[], signal?: AbortSignal): Promise<number[][]> {
+  async embeddings(model: string, input: string[], options?: { input_type?: "query" | "passage" }, signal?: AbortSignal): Promise<number[][]> {
     return this.withRotation(async (apiKey) => {
       const res = await this.http.post(
         "/embeddings",
-        { model, input, encoding_format: "float" },
+        { model, input, encoding_format: "float", ...options },
         {
           headers: { Authorization: `Bearer ${apiKey}` },
           signal: signal as AbortSignal | undefined
