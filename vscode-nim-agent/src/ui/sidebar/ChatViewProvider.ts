@@ -12,7 +12,7 @@ interface InboundMessage {
     | "openSettings" | "addKey" | "permissionResponse" | "planApproval"
     | "toggleAutoPermit" | "togglePlanMode" | "reviewFile" | "attachFile"
     | "detachFile" | "pinFile" | "unpinFile" | "applyCode" | "commitChanges" | "diffReview"
-    | "newChat" | "loadSession";
+    | "newChat" | "loadSession" | "getAnalytics" | "clearAnalytics";
   text?: string; agent?: AgentRole; model?: string; allowed?: boolean;
   approved?: boolean; path?: string; code?: string; sessionId?: string;
 }
@@ -20,7 +20,7 @@ interface InboundMessage {
 interface OutboundMessage {
   type:
     | "state" | "user" | "assistant_start" | "assistant_token" | "assistant_end"
-    | "step" | "error" | "info" | "permission_request" | "plan_proposal" | "session_loaded";
+    | "step" | "error" | "info" | "permission_request" | "plan_proposal" | "session_loaded" | "analytics";
   payload?: unknown;
 }
 
@@ -84,6 +84,13 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.store.memory.clear(); 
         this.post({ type: "info", payload: "All history cleared" }); 
         this.refreshState();
+        return;
+      case "getAnalytics":
+        this.post({ type: "analytics", payload: { summary: this.store.analyticsManager.getSummary(), events: this.store.analyticsManager.getEvents() } });
+        return;
+      case "clearAnalytics":
+        await this.store.analyticsManager.clear();
+        this.handleMessage({ type: "getAnalytics" });
         return;
       case "newChat":
         await this.store.historyManager.createSession();
@@ -194,9 +201,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       .code-block { margin: 16px 0; border: 1px solid var(--glass-border); border-radius: 10px; overflow: hidden; background: #000; }
       .code-header { display: flex; justify-content: space-between; align-items: center; padding: 8px 16px; background: rgba(255,255,255,0.04); font-size: 10px; }
       pre { margin: 0; padding: 16px; overflow-x: auto; font-family: var(--vscode-editor-font-family); font-size: 12px; }
-      .diff-add { background: rgba(40,167,69,0.2); color: #acf2bd; display: block; } .diff-del { background: rgba(220,53,69,0.2); color: #f85149; text-decoration: line-through; display: block; }
-      .stats { display: flex; gap: 12px; margin-top: 12px; font-size: 11px; font-weight: 700; }
-      .add { color: #2ecc71; } .del { color: #e74c3c; }
       .activity-block { margin: 16px 0; border: 1px solid var(--glass-border); border-radius: 12px; background: var(--glass-bg); }
       .activity-header { display: flex; align-items: center; gap: 10px; padding: 12px; cursor: pointer; }
       .activity-title { flex: 1; font-size: 12px; font-weight: 600; }
@@ -210,30 +214,40 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       .step-body { margin-top: 4px; font-size: 10px; opacity: 0.6; font-family: var(--vscode-editor-font-family); background: rgba(0,0,0,0.1); padding: 2px 4px; border-radius: 4px; }
       .perm-request { background: var(--vscode-editor-findMatchHighlightBackground); border: 1px solid var(--vscode-inputOption-activeBorder); border-radius: 8px; padding: 12px; margin: 12px 0; }
       .chip { display: inline-flex; align-items: center; gap: 6px; background: rgba(0,0,0,0.2); padding: 3px 10px; border-radius: 16px; font-size: 10px; margin: 3px; border: 1px solid var(--glass-border); }
-      .history-overlay { position: absolute; top: 50px; left: 10px; right: 10px; bottom: 80px; background: var(--vscode-sideBar-background); border: 1px solid var(--vscode-panel-border); border-radius: 12px; z-index: 100; display: none; flex-direction: column; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-      .history-header { padding: 12px; border-bottom: 1px solid var(--vscode-panel-border); font-weight: 800; font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
-      .history-list { flex: 1; overflow-y: auto; padding: 8px; }
-      .history-item { padding: 10px; border-radius: 6px; cursor: pointer; font-size: 12px; margin-bottom: 4px; border: 1px solid transparent; }
-      .history-item:hover { background: rgba(255,255,255,0.05); }
-      .history-item.active { border-color: var(--accent); background: rgba(255,255,255,0.03); }
+      .overlay { position: absolute; top: 50px; left: 10px; right: 10px; bottom: 80px; background: var(--vscode-sideBar-background); border: 1px solid var(--vscode-panel-border); border-radius: 12px; z-index: 100; display: none; flex-direction: column; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+      .overlay-header { padding: 12px; border-bottom: 1px solid var(--vscode-panel-border); font-weight: 800; font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
+      .overlay-content { flex: 1; overflow-y: auto; padding: 12px; }
+      .stat-card { background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); border-radius: 8px; padding: 16px; margin-bottom: 12px; }
+      .stat-val { font-size: 24px; font-weight: 800; color: var(--accent); }
+      .stat-label { font-size: 10px; opacity: 0.6; text-transform: uppercase; margin-top: 4px; }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      .bar-container { height: 8px; background: rgba(255,255,255,0.05); border-radius: 4px; overflow: hidden; margin-top: 8px; }
+      .bar-fill { height: 100%; background: var(--accent); }
+      .event-item { font-size: 11px; padding: 8px; border-bottom: 1px solid var(--glass-border); }
+      .event-meta { display: flex; justify-content: space-between; opacity: 0.5; margin-bottom: 4px; }
       .composer { padding: 16px; border-top: 1px solid var(--vscode-panel-border); display: flex; flex-direction: column; gap: 12px; }
       textarea { background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 12px; border-radius: 8px; resize: none; min-height: 50px; font-family: inherit; }
     </style></head><body>
       <div class="toolbar">
         <button id="historyBtn" class="ghost" title="History">📜</button>
+        <button id="analyticsBtn" class="ghost" title="Analytics">📊</button>
         <button id="newChatBtn" class="ghost" title="New Chat">➕</button>
         <div style="flex:1"></div>
         <button id="planBtn" class="ghost" title="Plan Mode">Plan</button>
         <button id="autoBtn" class="ghost" title="Auto-permit">Auto</button>
         <button id="reviewBtn" class="ghost" title="Review File">🛡️</button>
-        <button id="clearBtn" class="ghost" title="Clear All History">🗑️</button>
-        <select id="agentSel" style="width:70px"></select>
-        <select id="modelSel" style="width:100px"></select>
+        <button id="clearBtn" class="ghost" title="Clear History">🗑️</button>
+        <select id="agentSel" style="width:90px; padding: 4px 6px;"></select>
+        <select id="modelSel" style="width:130px; padding: 4px 6px;"></select>
       </div>
       <div id="log"></div>
-      <div id="historyOverlay" class="history-overlay">
-        <div class="history-header"><span>Past Chats</span><span id="closeHistory" style="cursor:pointer">×</span></div>
-        <div id="historyList" class="history-list"></div>
+      <div id="historyOverlay" class="overlay">
+        <div class="overlay-header"><span>Past Chats</span><span id="closeHistory" style="cursor:pointer">×</span></div>
+        <div id="historyList" class="overlay-content"></div>
+      </div>
+      <div id="analyticsOverlay" class="overlay">
+        <div class="overlay-header"><span>Analytics</span><span id="closeAnalytics" style="cursor:pointer">×</span></div>
+        <div id="analyticsContent" class="overlay-content"></div>
       </div>
       <div id="contextBank" style="display:none"><div id="pinnedList" style="padding:0 10px;"></div></div>
       <div id="contextBar" style="padding:4px 12px;"></div>
@@ -256,14 +270,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         const sendBtn = document.getElementById('sendBtn');
         const cancelBtn = document.getElementById('cancelBtn');
         const historyBtn = document.getElementById('historyBtn');
+        const analyticsBtn = document.getElementById('analyticsBtn');
         const newChatBtn = document.getElementById('newChatBtn');
         const planBtn = document.getElementById('planBtn');
         const autoBtn = document.getElementById('autoBtn');
         const reviewBtn = document.getElementById('reviewBtn');
         const clearBtn = document.getElementById('clearBtn');
         const historyOverlay = document.getElementById('historyOverlay');
+        const analyticsOverlay = document.getElementById('analyticsOverlay');
         const historyList = document.getElementById('historyList');
+        const analyticsContent = document.getElementById('analyticsContent');
         const closeHistory = document.getElementById('closeHistory');
+        const closeAnalytics = document.getElementById('closeAnalytics');
         const status = document.getElementById('status');
         
         let hasEdits = false, activeBubble = null, activeSteps = null, lastTool = null, streamingState = { isJson: false, jsonBuffer: '', isFinal: false, finalExtracted: '' };
@@ -286,7 +304,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             }).join('');
             return '<div class="code-block"><div class="code-header"><span>'+(l||'code')+'</span><button class="apply-btn" data-code="'+utob(c)+'">Apply</button></div><pre>'+lines+'</pre></div>';
           });
-          const stats = (adds || dels) ? '<div class="stats"><span class="add">+'+adds+'</span> <span class="del">-'+dels+'</span></div>' : '';
+          const stats = (adds || dels) ? '<div class="stats" style="display:flex; gap:12px; margin-top:12px; font-size:11px; font-weight:700;"><span style="color:#2ecc71;">+'+adds+'</span> <span style="color:#e74c3c;">-'+dels+'</span></div>' : '';
           return h.replace(/Thought:/g, '<strong>Thought:</strong>').replace(/Plan:/g, '<strong>Plan:</strong>').replace(/^\\s*\\*\\s+(.*)$/gm, '• $1').replace(/\\n/g, '<br>') + stats;
         }
 
@@ -297,10 +315,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         }
 
         document.addEventListener('click', e => {
-          const t = e.target.closest('.apply-btn, .review-btn, [data-action], .activity-header, .perm-btn, .history-item');
+          const t = e.target.closest('.apply-btn, .review-btn, [data-action], .activity-header, .perm-btn, .history-item, #resetAnalyticsBtn');
           if (!t) return;
           if (t.classList.contains('apply-btn')) vscode.postMessage({ type: 'applyCode', code: btou(t.dataset.code) });
           else if (t.classList.contains('review-btn')) vscode.postMessage({ type: 'diffReview' });
+          else if (t.id === 'resetAnalyticsBtn') vscode.postMessage({ type: 'clearAnalytics' });
           else if (t.classList.contains('history-item')) { vscode.postMessage({ type: 'loadSession', sessionId: t.dataset.id }); historyOverlay.style.display = 'none'; }
           else if (t.classList.contains('perm-btn')) { vscode.postMessage({ type: 'permissionResponse', allowed: t.dataset.allow === 'true' }); t.parentElement.innerHTML = '<i>' + (t.dataset.allow === 'true' ? 'Allowed' : 'Denied') + '</i>'; }
           else if (t.dataset.action === 'pin') vscode.postMessage({ type: 'pinFile', path: t.dataset.path });
@@ -310,13 +329,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         });
 
         sendBtn.onclick = () => { const t = input.value.trim(); if (t) { vscode.postMessage({ type: 'send', text: t, agent: agentSel.value, model: modelSel.value }); input.value = ''; } };
-        historyBtn.onclick = () => { historyOverlay.style.display = historyOverlay.style.display === 'flex' ? 'none' : 'flex'; };
+        historyBtn.onclick = () => { historyOverlay.style.display = historyOverlay.style.display === 'flex' ? 'none' : 'flex'; analyticsOverlay.style.display = 'none'; };
+        analyticsBtn.onclick = () => { if (analyticsOverlay.style.display === 'flex') { analyticsOverlay.style.display = 'none'; } else { analyticsOverlay.style.display = 'flex'; historyOverlay.style.display = 'none'; vscode.postMessage({ type: 'getAnalytics' }); } };
         newChatBtn.onclick = () => vscode.postMessage({ type: 'newChat' });
         planBtn.onclick = () => vscode.postMessage({ type: 'togglePlanMode' });
         autoBtn.onclick = () => vscode.postMessage({ type: 'toggleAutoPermit' });
         reviewBtn.onclick = () => vscode.postMessage({ type: 'reviewFile' });
         clearBtn.onclick = () => { if (confirm('Clear ALL history?')) vscode.postMessage({ type: 'clearMemory' }); };
         closeHistory.onclick = () => historyOverlay.style.display = 'none';
+        closeAnalytics.onclick = () => analyticsOverlay.style.display = 'none';
         cancelBtn.onclick = () => vscode.postMessage({ type: 'cancel' });
         input.onkeydown = e => { if (e.ctrlKey && e.key === 'Enter') sendBtn.click(); };
 
@@ -331,6 +352,14 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             pinnedList.innerHTML = m.payload.pinnedFiles.map(p => '<div class="chip"><span>'+p+'</span><span data-action="unpin" data-path="'+p+'">×</span></div>').join('');
             document.getElementById('contextBank').style.display = m.payload.pinnedFiles.length ? 'block' : 'none';
             historyList.innerHTML = m.payload.sessions.map(s => '<div class="history-item'+(s.id===m.payload.currentSessionId?' active':'')+'" data-id="'+s.id+'">'+s.title+'</div>').join('');
+          } else if (m.type === 'analytics') {
+            const { summary, events } = m.payload;
+            const total = summary.totalTokens || 1;
+            analyticsContent.innerHTML = '<div class="grid"><div class="stat-card"><div class="stat-val">'+summary.totalTokens+'</div><div class="stat-label">Total Tokens</div></div><div class="stat-card"><div class="stat-val">'+summary.successRate.toFixed(1)+'%</div><div class="stat-label">Success Rate</div></div></div>' +
+              '<div class="stat-card"><strong>Model Usage</strong>' + Object.entries(summary.modelUsage).map(([k,v]) => '<div style="margin-top:8px; font-size:10px;">'+k+' ('+v+')<div class="bar-container"><div class="bar-fill" style="width:'+((v/total)*100).toFixed(0)+'%"></div></div></div>').join('') + '</div>' +
+              '<div class="stat-card"><strong>API Key Health</strong>' + Object.entries(summary.keyHealth).map(([k,v]) => '<div style="display:flex; justify-content:space-between; font-size:11px; margin-top:4px;"><span>'+k+'</span><span>'+((v.success/v.total)*100).toFixed(0)+'% ('+v.total+')</span></div>').join('') + '</div>' +
+              '<strong>Recent Activity</strong>' + events.slice(0, 10).map(ev => '<div class="event-item"><div class="event-meta"><span>'+ev.model+'</span><span>'+new Date(ev.timestamp).toLocaleTimeString()+'</span></div><div style="display:flex; justify-content:space-between;"><span>'+ev.status+' ('+ev.retries+' retries)</span><span style="color:var(--accent)">'+(ev.tokensIn + ev.tokensOut)+' tokens</span></div></div>').join('') +
+              '<button id="resetAnalyticsBtn" class="secondary" style="width:100%; margin-top:16px;">Reset All Data</button>';
           } else if (m.type === 'session_loaded') {
             log.innerHTML = ''; const msgs = m.payload.messages || []; msgs.forEach(msg => renderMessage(msg.role, msg.content)); log.scrollTop = log.scrollHeight;
           } else if (m.type === 'user') {
@@ -341,11 +370,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             log.appendChild(d); activeBubble = d.querySelector('.body'); activeSteps = d.querySelector('.steps-container'); streamingState = { isJson: false, jsonBuffer: '', isFinal: false, finalExtracted: '' }; hasEdits = false; cancelBtn.style.display = 'block'; status.textContent = 'Thinking...';
           } else if (m.type === 'assistant_token') {
             status.textContent = 'Typing...'; const token = m.payload; const fence = String.fromCharCode(96).repeat(3); streamingState.jsonBuffer += token;
-            if (!streamingState.isJson && (streamingState.jsonBuffer.includes(fence + 'json') || streamingState.jsonBuffer.includes('{"tool"'))) {
-              streamingState.isJson = true; const r = new RegExp('(' + fence + 'json|\\\\{"tool").*$'); activeBubble.textContent = activeBubble.textContent.replace(r, '').trim();
+            if (!streamingState.isJson && (streamingState.jsonBuffer.indexOf(fence + 'json') !== -1 || streamingState.jsonBuffer.indexOf('{"tool"') !== -1)) {
+              streamingState.isJson = true; 
+              activeBubble.textContent = activeBubble.textContent.trim();
             }
             if (streamingState.isJson) {
-              if (!streamingState.isFinal && streamingState.jsonBuffer.includes('"final"')) streamingState.isFinal = true;
+              if (!streamingState.isFinal && streamingState.jsonBuffer.indexOf('"final"') !== -1) streamingState.isFinal = true;
               if (streamingState.isFinal) {
                 const match = streamingState.jsonBuffer.match(/"final":\\s*"([^"]*)/);
                 if (match && match[1]) { const newContent = match[1].replace(/\\\\n/g, '\\n'); const delta = newContent.slice(streamingState.finalExtracted.length); if (delta) { activeBubble.textContent += delta; streamingState.finalExtracted = newContent; } }

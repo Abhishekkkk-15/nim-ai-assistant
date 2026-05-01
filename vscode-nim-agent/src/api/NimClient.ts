@@ -9,6 +9,8 @@ import {
 import type { ApiKeyManager } from "./ApiKeyManager";
 import type { Logger } from "../utils/logger";
 
+import type { AnalyticsManager } from "../core/memory/AnalyticsManager";
+
 const MAX_ROTATIONS = 3;
 
 /**
@@ -23,7 +25,8 @@ export class NimClient extends BaseProvider {
   constructor(
     config: ProviderConfig,
     private readonly keys: ApiKeyManager,
-    private readonly logger: Logger
+    private readonly logger: Logger,
+    private readonly analytics?: AnalyticsManager
   ) {
     super();
     this.id = config.id;
@@ -53,7 +56,7 @@ export class NimClient extends BaseProvider {
         promptTokens: data?.usage?.prompt_tokens,
         completionTokens: data?.usage?.completion_tokens
       };
-    });
+    }, req);
   }
 
   async chatStream(
@@ -125,7 +128,7 @@ export class NimClient extends BaseProvider {
         }
         throw err;
       }
-    });
+    }, req);
   }
 
   private async readStream(stream: NodeJS.ReadableStream): Promise<string> {
@@ -156,13 +159,14 @@ export class NimClient extends BaseProvider {
    * Run an operation with the next available API key. On 429 / network
    * failure rotate to the next key and retry up to MAX_ROTATIONS times.
    */
-  private async withRotation<T>(op: (apiKey: string) => Promise<T>): Promise<T> {
+  private async withRotation<T>(op: (apiKey: string) => Promise<T>, req?: ChatRequest): Promise<T> {
     if (!this.keys.hasKeys()) {
       throw new Error(
         "No NVIDIA NIM API key configured. Run \"NIM Agent: Add API Key\" from the Command Palette."
       );
     }
     let lastErr: unknown;
+    const startTime = Date.now();
     for (let attempt = 0; attempt < Math.min(MAX_ROTATIONS, this.keys.count()); attempt++) {
       const apiKey = this.keys.next();
       if (!apiKey) {
@@ -171,6 +175,22 @@ export class NimClient extends BaseProvider {
       try {
         const result = await op(apiKey);
         this.keys.reportSuccess(apiKey);
+        
+        // Log success
+        if (this.analytics && result && typeof result === 'object') {
+          const res = result as any;
+          this.analytics.logEvent({
+            model: res.model || req?.model || "unknown",
+            agent: "agent",
+            tokensIn: res.promptTokens || 0,
+            tokensOut: res.completionTokens || 0,
+            status: 'success',
+            retries: attempt,
+            duration: Date.now() - startTime,
+            apiKeyName: apiKey.substring(0, 8) + "..."
+          });
+        }
+        
         return result;
       } catch (err) {
         lastErr = err;
@@ -179,19 +199,40 @@ export class NimClient extends BaseProvider {
         if (status) {
           this.keys.reportFailure(apiKey, status);
         } else {
-          // network error -> still penalize but lighter
           this.keys.reportFailure(apiKey);
         }
-        this.logger.warn(
-          `NIM request attempt ${attempt + 1} failed (status=${status ?? "n/a"}). ${
-            transient ? "Rotating key and retrying." : "Aborting."
-          }`
-        );
+        
         if (!transient && status) {
+          // Log permanent error
+          this.analytics?.logEvent({
+            model: req?.model || "unknown",
+            agent: "agent",
+            tokensIn: 0,
+            tokensOut: 0,
+            status: 'error',
+            errorMessage: String(err),
+            retries: attempt,
+            duration: Date.now() - startTime,
+            apiKeyName: apiKey.substring(0, 8) + "..."
+          });
           throw this.normalizeError(err);
         }
       }
     }
+    
+    // Log final failure after all retries
+    this.analytics?.logEvent({
+      model: req?.model || "unknown",
+      agent: "agent",
+      tokensIn: 0,
+      tokensOut: 0,
+      status: 'error',
+      errorMessage: String(lastErr),
+      retries: Math.min(MAX_ROTATIONS, this.keys.count()) - 1,
+      duration: Date.now() - startTime,
+      apiKeyName: "all-failed"
+    });
+    
     throw this.normalizeError(lastErr ?? new Error("Unknown NIM client error."));
   }
 

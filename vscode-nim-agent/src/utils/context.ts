@@ -10,6 +10,7 @@ import type { AgentRegistry } from "../core/agent/AgentRegistry";
 import type { ChatViewProvider } from "../ui/sidebar/ChatViewProvider";
 import type { ContextManager } from "../core/context/ContextManager";
 import type { HistoryManager } from "../core/memory/HistoryManager";
+import { AnalyticsManager } from "../core/memory/AnalyticsManager";
 
 /**
  * Lightweight DI container shared across modules.
@@ -28,4 +29,5 @@ export class ExtensionContextStore {
   chatProvider!: ChatViewProvider;
   contextManager!: ContextManager;
   historyManager!: HistoryManager;
+  analyticsManager!: AnalyticsManager;
 }

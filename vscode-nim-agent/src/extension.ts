@@ -21,6 +21,7 @@ import { LocalCache } from "./core/memory/LocalCache";
 import { AgentRegistry } from "./core/agent/AgentRegistry";
 import { ContextManager } from "./core/context/ContextManager";
 import { HistoryManager } from "./core/memory/HistoryManager";
+import { AnalyticsManager } from "./core/memory/AnalyticsManager";
 import { registerInlineEditCommand } from "./commands/InlineEditCommand";
 import { registerErrorHealer } from "./providers/ErrorHealerProvider";
 import { ChatAssistantAgent } from "./core/agent/ChatAssistantAgent";
@@ -46,7 +47,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   await apiKeyManager.load();
   store.apiKeyManager = apiKeyManager;
 
-  const providerRegistry = new ProviderRegistry(logger, apiKeyManager);
+  const analyticsManager = new AnalyticsManager(context);
+  store.analyticsManager = analyticsManager;
+
+  const providerRegistry = new ProviderRegistry(logger, apiKeyManager, analyticsManager);
   providerRegistry.loadFromConfig();
   store.providerRegistry = providerRegistry;
 

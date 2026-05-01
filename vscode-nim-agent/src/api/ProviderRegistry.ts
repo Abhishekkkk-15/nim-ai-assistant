@@ -3,6 +3,7 @@ import type { Logger } from "../utils/logger";
 import { BaseProvider, ProviderConfig } from "./BaseProvider";
 import { NimClient } from "./NimClient";
 import type { ApiKeyManager } from "./ApiKeyManager";
+import type { AnalyticsManager } from "../core/memory/AnalyticsManager";
 
 /**
  * Registry that maps provider IDs to instances.
@@ -14,7 +15,8 @@ export class ProviderRegistry {
 
   constructor(
     private readonly logger: Logger,
-    private readonly keys: ApiKeyManager
+    private readonly keys: ApiKeyManager,
+    private readonly analytics: AnalyticsManager
   ) {}
 
   loadFromConfig(): void {
@@ -31,7 +33,8 @@ export class ProviderRegistry {
         new NimClient(
           { id: "nvidia-nim", label: "NVIDIA NIM", baseUrl: apiBaseUrl, active: true },
           this.keys,
-          this.logger
+          this.logger,
+          this.analytics
         )
       );
       this.activeId = "nvidia-nim";
@@ -39,10 +42,8 @@ export class ProviderRegistry {
     }
 
     for (const cfg of providers) {
-      // Currently the only provider implementation is the NIM/OpenAI-compatible one.
-      // Adding e.g. an Anthropic adapter is a matter of switching on cfg.id here.
       const baseUrl = cfg.baseUrl || apiBaseUrl;
-      this.register(new NimClient({ ...cfg, baseUrl }, this.keys, this.logger));
+      this.register(new NimClient({ ...cfg, baseUrl }, this.keys, this.logger, this.analytics));
       if (cfg.active && !this.activeId) {
         this.activeId = cfg.id;
       }
