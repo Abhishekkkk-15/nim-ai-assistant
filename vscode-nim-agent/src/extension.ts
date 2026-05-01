@@ -17,6 +17,10 @@ import { GitManagerTool } from "./core/tools/GitManagerTool";
 import { ReplaceInFileTool } from "./core/tools/ReplaceInFileTool";
 import { ReplaceFileContentTool } from "./core/tools/ReplaceFileContentTool";
 import { GetDiagnosticsTool } from "./core/tools/GetDiagnosticsTool";
+import { ApplyWorkspaceEditTool } from "./core/tools/ApplyWorkspaceEditTool";
+import { SemanticSearchTool } from "./core/tools/SemanticSearchTool";
+import { TestRunnerTool } from "./core/tools/TestRunnerTool";
+import { VectorIndexService } from "./core/context/VectorIndexService";
 import { ConversationMemory } from "./core/memory/ConversationMemory";
 import { LocalCache } from "./core/memory/LocalCache";
 import { AgentRegistry } from "./core/agent/AgentRegistry";
@@ -71,6 +75,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const contextManager = new ContextManager(context);
   store.contextManager = contextManager;
 
+  const vectorIndex = new VectorIndexService(store);
+  store.vectorIndex = vectorIndex;
+  // Trigger background indexing
+  vectorIndex.startIndexing().catch(err => logger.error("Background indexing error", err));
+
   const rulesLoader = new RulesLoader();
   store.rulesLoader = rulesLoader;
   context.subscriptions.push(rulesLoader);
@@ -92,6 +101,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   toolRegistry.register(new ReplaceInFileTool());
   toolRegistry.register(new ReplaceFileContentTool());
   toolRegistry.register(new GetDiagnosticsTool());
+  toolRegistry.register(new ApplyWorkspaceEditTool());
+  toolRegistry.register(new SemanticSearchTool(vectorIndex));
+  toolRegistry.register(new TestRunnerTool());
   toolRegistry.register(new HandOffTool());
   store.toolRegistry = toolRegistry;
 

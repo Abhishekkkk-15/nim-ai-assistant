@@ -131,6 +131,21 @@ export class NimClient extends BaseProvider {
     }, req);
   }
 
+  async embeddings(model: string, input: string[], signal?: AbortSignal): Promise<number[][]> {
+    return this.withRotation(async (apiKey) => {
+      const res = await this.http.post(
+        "/embeddings",
+        { model, input, encoding_format: "float" },
+        {
+          headers: { Authorization: `Bearer ${apiKey}` },
+          signal: signal as AbortSignal | undefined
+        }
+      );
+      const data = res.data;
+      return data.data.map((item: any) => item.embedding);
+    });
+  }
+
   private async readStream(stream: NodeJS.ReadableStream): Promise<string> {
     return new Promise((resolve) => {
       let data = "";

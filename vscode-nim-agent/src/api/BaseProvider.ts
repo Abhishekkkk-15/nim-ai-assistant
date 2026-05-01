@@ -53,4 +53,6 @@ export abstract class BaseProvider {
     handlers: StreamHandlers,
     signal?: AbortSignal
   ): Promise<CompletionResult>;
+
+  abstract embeddings(model: string, input: string[], signal?: AbortSignal): Promise<number[][]>;
 }
