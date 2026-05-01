@@ -45,6 +45,11 @@ interface ParsedAction {
   final?: string;
 }
 
+interface MultiAction {
+  thought?: string;
+  actions: ParsedAction[];
+}
+
 /**
  * Shared agent loop. Subclasses customize the system prompt and tool whitelist.
  *
@@ -109,6 +114,16 @@ export abstract class BaseAgent {
     let totalPromptTokens = 0;
     let totalCompletionTokens = 0;
 
+    // Smart Pruning: if messages exceed 20, keep system and last 10
+    if (messages.length > 20) {
+      const system = messages[0];
+      const recent = messages.slice(-10);
+      messages.length = 0;
+      messages.push(system);
+      messages.push({ role: "system", content: "[Context Pruned: Early messages removed to fit context window]" });
+      messages.push(...recent);
+    }
+
     let consecutiveNoJson = 0;
     for (let step = 0; step < maxSteps; step++) {
       let assistantText = "";
@@ -142,85 +157,91 @@ export abstract class BaseAgent {
       }
 
       messages.push({ role: "assistant", content: assistantText });
-      const action = this.parseAction(assistantText);
+      const { thought, actions } = this.parseActions(assistantText);
 
-      if (action.thought) {
-        const thoughtStep: AgentStep = { type: "thought", payload: action.thought };
+      if (thought) {
+        const thoughtStep: AgentStep = { type: "thought", payload: thought };
         steps.push(thoughtStep);
         input.onStep?.(thoughtStep);
       }
 
-      if (action.tool) {
-        const toolDef = this.store.toolRegistry.get(action.tool.name)?.definition();
-        if (this.allowedTools() && !this.allowedTools()!.includes(action.tool.name)) {
-          const denied = `Tool "${action.tool.name}" is not allowed for the ${this.role} agent.`;
-          steps.push({ type: "tool_result", name: action.tool.name, payload: denied });
-          messages.push({ role: "user", content: this.toolResultPrompt(action.tool.name, { ok: false, output: denied }) });
+      if (actions.length > 0) {
+        let hasTool = false;
+        const toolPromises = actions.map(async (action) => {
+          if (action.tool) {
+            hasTool = true;
+            const toolName = action.tool.name;
+            const toolInput = action.tool.input;
+
+            const toolDef = this.store.toolRegistry.get(toolName)?.definition();
+            if (this.allowedTools() && !this.allowedTools()!.includes(toolName)) {
+              const denied = `Tool "${toolName}" is not allowed for the ${this.role} agent.`;
+              return { toolName, result: { ok: false, output: denied } };
+            }
+
+            // Permission check
+            if (toolDef?.requiresPermission && input.onPermissionRequest) {
+              const allowed = await input.onPermissionRequest(toolName, toolInput);
+              if (!allowed) {
+                const denied = `User denied permission to execute ${toolName}.`;
+                return { toolName, result: { ok: false, output: denied } };
+              }
+            }
+
+            const toolCallStep: AgentStep = { type: "tool_call", name: toolName, payload: JSON.stringify(toolInput) };
+            steps.push(toolCallStep);
+            input.onStep?.(toolCallStep);
+            
+            const result = await this.store.toolRegistry.execute(toolName, toolInput);
+            return { toolName, result };
+          }
+          return null;
+        });
+
+        const results = (await Promise.all(toolPromises)).filter(r => r !== null) as { toolName: string; result: ToolResult }[];
+        
+        for (const res of results) {
+          const toolResultStep: AgentStep = { type: "tool_result", name: res.toolName, payload: res.result.output };
+          steps.push(toolResultStep);
+          input.onStep?.(toolResultStep);
+          messages.push({ role: "user", content: this.toolResultPrompt(res.toolName, res.result) });
+          
+          if (res.result.terminal) {
+             finalContent = res.result.output;
+             return { content: finalContent, steps, usage: { promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens, totalTokens: totalPromptTokens + totalCompletionTokens } };
+          }
+        }
+
+        if (hasTool) {
+          consecutiveNoJson = 0;
           continue;
         }
 
-        // Permission check
-        if (toolDef?.requiresPermission && input.onPermissionRequest) {
-          const allowed = await input.onPermissionRequest(action.tool.name, action.tool.input);
-          if (!allowed) {
-            const denied = `User denied permission to execute ${action.tool.name}.`;
-            steps.push({ type: "tool_result", name: action.tool.name, payload: denied });
-            messages.push({ role: "user", content: this.toolResultPrompt(action.tool.name, { ok: false, output: denied }) });
-            continue;
+        const planAction = actions.find(a => a.plan);
+        if (planAction && planAction.plan) {
+          steps.push({ type: "thought", payload: `Proposed Plan: ${planAction.plan}` });
+          if (input.onPlanApproval) {
+            const approved = await input.onPlanApproval(planAction.plan);
+            if (!approved) {
+              finalContent = "Plan rejected by user. Stopping.";
+              steps.push({ type: "final", payload: finalContent });
+              break;
+            }
           }
+          messages.push({ role: "user", content: "Plan approved. Please proceed with the execution." });
+          continue;
         }
 
-        const toolCallStep: AgentStep = { type: "tool_call", name: action.tool.name, payload: JSON.stringify(action.tool.input) };
-        steps.push(toolCallStep);
-        input.onStep?.(toolCallStep);
-        const result = await this.store.toolRegistry.execute(action.tool.name, action.tool.input);
-        
-        if (result.ok && (action.tool.name === "write_file" || action.tool.name === "replace_in_file" || action.tool.name === "replace_file_content")) {
-          const fp = action.tool.input.path as string | undefined;
-          if (fp && fp.includes(".nim-agent")) {
-            try {
-              const folders = vscode.workspace.workspaceFolders;
-              if (folders && folders.length > 0) {
-                const fullPath = path.isAbsolute(fp) ? fp : path.join(folders[0].uri.fsPath, fp);
-                vscode.window.showTextDocument(vscode.Uri.file(fullPath), { preview: false, preserveFocus: true });
-              }
-            } catch (e) { /* ignore */ }
-          }
-        }
-
-        const toolResultStep: AgentStep = { type: "tool_result", name: action.tool.name, payload: result.output };
-        steps.push(toolResultStep);
-        input.onStep?.(toolResultStep);
-        messages.push({ role: "user", content: this.toolResultPrompt(action.tool.name, result) });
-        if (result.terminal) {
-          finalContent = result.output;
+        const finalAction = actions.find(a => a.final);
+        if (finalAction && finalAction.final) {
+          finalContent = finalAction.final;
+          steps.push({ type: "final", payload: finalContent });
           break;
         }
-        continue;
-      }
-
-      if (action.plan) {
-        steps.push({ type: "thought", payload: `Proposed Plan: ${action.plan}` });
-        if (input.onPlanApproval) {
-          const approved = await input.onPlanApproval(action.plan);
-          if (!approved) {
-            finalContent = "Plan rejected by user. Stopping.";
-            steps.push({ type: "final", payload: finalContent });
-            break;
-          }
-        }
-        messages.push({ role: "user", content: "Plan approved. Please proceed with the execution." });
-        continue;
-      }
-
-      if (action.final) {
-        finalContent = action.final;
-        steps.push({ type: "final", payload: finalContent });
-        break;
       }
 
       // If no JSON block but we've had thoughts, and it looks like a tool call was intended
-      if (!action.tool && !action.plan && !action.final) {
+      if (actions.length === 0) {
         const looksLikeTool = assistantText.toLowerCase().includes("tool") || 
                              assistantText.toLowerCase().includes("read_file") ||
                              assistantText.toLowerCase().includes("write_file") ||
@@ -234,9 +255,8 @@ export abstract class BaseAgent {
       }
       
       consecutiveNoJson = 0;
-      if (!action.tool && !action.plan) {
-         // If we reached here, it's either a valid final answer or we should stop
-         finalContent = action.final || assistantText;
+      if (actions.length === 0) {
+         finalContent = assistantText;
          break;
       }
     }
@@ -314,7 +334,7 @@ ${tools}
 ${allowedNote}
 ${planInstruction}
 
-To call a tool, reply with EXACTLY one fenced JSON block of the form:
+To call tools, reply with one or more fenced JSON blocks. You may call multiple tools in parallel if it helps you achieve the goal faster (e.g. reading multiple files at once).
 \`\`\`json
 { "tool": "<tool_name>", "input": { ... } }
 \`\`\`
@@ -372,40 +392,53 @@ ${ctxBlock}`;
   }
 
   /**
-   * Parses the assistant's reply for a JSON action block.
-   * Tolerant of leading natural-language thought.
+   * Parses the assistant's reply for multiple JSON action blocks.
    */
-  private parseAction(text: string): ParsedAction {
-    const fenceMatch = text.match(/```json\s*([\s\S]*?)```/i) ?? text.match(/```\s*([\s\S]*?)```/i);
-    const thought = fenceMatch ? text.slice(0, fenceMatch.index).trim() : undefined;
-    const jsonText = fenceMatch ? fenceMatch[1].trim() : this.findBareJson(text);
+  private parseActions(text: string): MultiAction {
+    const actions: ParsedAction[] = [];
+    const fenceRegex = /```json\s*([\s\S]*?)```/gi;
+    let thought: string | undefined;
+    let match;
 
-    if (!jsonText) {
-      return { thought, final: text.trim() };
+    while ((match = fenceRegex.exec(text)) !== null) {
+      if (thought === undefined) {
+        thought = text.slice(0, match.index).trim();
+      }
+      try {
+        const raw = JSON.parse(match[1].trim());
+        const normalized = this.normalizeAction(raw);
+        if (normalized) actions.push(normalized);
+      } catch { /* skip */ }
     }
-    try {
-      const parsed = JSON.parse(jsonText) as {
-        tool?: string;
-        input?: Record<string, unknown>;
-        plan?: string;
-        final?: string;
-      };
-      if (parsed.tool) {
-        return {
-          thought,
-          tool: { name: parsed.tool, input: parsed.input ?? {} }
-        };
+
+    if (actions.length === 0) {
+      const bare = this.findBareJson(text);
+      if (bare) {
+        try {
+          const raw = JSON.parse(bare);
+          const normalized = this.normalizeAction(raw);
+          if (normalized) {
+            actions.push(normalized);
+            thought = text.slice(0, text.indexOf(bare)).trim();
+          }
+        } catch { /* skip */ }
       }
-      if (typeof parsed.plan === "string") {
-        return { thought, plan: parsed.plan };
-      }
-      if (typeof parsed.final === "string") {
-        return { thought, final: parsed.final };
-      }
-    } catch {
-      // fall through
     }
-    return { thought, final: text.trim() };
+
+    return { thought, actions };
+  }
+
+  private normalizeAction(raw: any): ParsedAction | null {
+    if (!raw || typeof raw !== "object") return null;
+
+    if (raw.tool && typeof raw.tool === "string") {
+      return { tool: { name: raw.tool, input: raw.input || {} } };
+    }
+    if (raw.plan) return { plan: raw.plan };
+    if (raw.final) return { final: raw.final };
+    if (raw.thought && !raw.tool && !raw.final) return { thought: raw.thought };
+    
+    return null;
   }
 
   private findBareJson(text: string): string | undefined {

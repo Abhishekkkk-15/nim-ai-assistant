@@ -213,6 +213,24 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         if (msg.path) this.attachedFiles.delete(msg.path);
         this.refreshState();
         return;
+      case "applyCode": {
+        const { code } = msg;
+        const activeEditor = vscode.window.activeTextEditor;
+        if (!activeEditor) {
+          vscode.window.showErrorMessage("No active editor to apply code to.");
+          return;
+        }
+        // Basic application: replace selection or append
+        const selection = activeEditor.selection;
+        activeEditor.edit(editBuilder => {
+          if (selection.isEmpty) {
+            editBuilder.insert(selection.active, code);
+          } else {
+            editBuilder.replace(selection, code);
+          }
+        });
+        return;
+      }
     }
   }
 
@@ -247,6 +265,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     this.post({ type: "user", payload: prompt });
     this.post({ type: "assistant_start", payload: { agent: role } });
+
+
 
     const ctx = await collectEditorContext(Array.from(this.attachedFiles));
     this.currentAbort = new AbortController();
@@ -358,6 +378,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     --bg-darker: rgba(0,0,0,0.15);
     --accent: var(--vscode-button-background);
     --accent-hover: var(--vscode-button-hoverBackground);
+    --glass-bg: rgba(30, 30, 30, 0.4);
+    --glass-border: rgba(255, 255, 255, 0.05);
+    --blur: 12px;
   }
   html, body { height: 100%; margin: 0; padding: 0; font-family: var(--vscode-font-family); color: var(--vscode-foreground); background: var(--vscode-sideBar-background); overflow: hidden; }
   body { display: flex; flex-direction: column; position: relative; }
@@ -411,7 +434,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   button.ghost:hover { opacity: 1; background: var(--bg-darker); border-color: var(--vscode-focusBorder); }
   button.active { background: var(--accent); color: var(--vscode-button-foreground); border-color: transparent; opacity: 1; box-shadow: 0 0 10px var(--accent); }
 
-  /* Timeline Layout */
+  /* Timeline Layout with Glassmorphism */
   #log { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 32px; padding: 24px 20px; scroll-behavior: smooth; }
   .msg { position: relative; display: flex; flex-direction: column; gap: 8px; }
   
@@ -420,7 +443,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   .msg.user .who { color: var(--vscode-charts-blue, #3794ff); opacity: 0.7; }
   
   /* Assistant Section */
-  .msg.assistant { border-top: 1px solid rgba(255,255,255,0.05); padding-top: 24px; }
+  .msg.assistant { 
+    border-top: 1px solid var(--glass-border); 
+    padding-top: 24px;
+    background: linear-gradient(to bottom, rgba(255,255,255,0.01), transparent);
+  }
   .msg.assistant:first-child { border-top: none; padding-top: 0; }
   .msg.assistant .who { color: var(--vscode-charts-purple, #b267e6); opacity: 0.7; }
   
@@ -429,14 +456,37 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     letter-spacing: 0.08em; display: flex; align-items: center; gap: 8px;
   }
 
-  .body { font-size: 13.5px; line-height: 1.6; color: var(--vscode-foreground); opacity: 0.95; }
-  .body pre { background: var(--bg-darker); padding: 14px; border-radius: 6px; margin: 16px 0; border: 1px solid rgba(255,255,255,0.06); }
+  .body pre { background: var(--bg-darker); border-radius: 6px; margin: 16px 0; border: 1px solid rgba(255,255,255,0.06); overflow: hidden; }
+  
+  .code-block-container { 
+    margin: 16px 0; border: 1px solid var(--glass-border);
+    border-radius: 8px; overflow: hidden;
+    background: rgba(0,0,0,0.3);
+  }
+  .code-header { 
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 12px; background: rgba(255,255,255,0.05); 
+    border-bottom: 1px solid var(--glass-border); font-size: 10px;
+    font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; opacity: 0.6;
+  }
+  .apply-btn {
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none; padding: 4px 12px; border-radius: 4px;
+    cursor: pointer; font-size: 10px; font-weight: 600;
+    transition: all 0.2s;
+  }
+  .apply-btn:hover { filter: brightness(1.2); transform: translateY(-1px); }
+  pre { margin: 0; padding: 14px; overflow-x: auto; font-family: var(--vscode-editor-font-family); font-size: 12px; }
 
   /* Hierarchical Activity System */
   .activity-block {
-    margin: 16px 0; border: 1px solid var(--vscode-panel-border);
-    border-radius: 8px; overflow: hidden; background: rgba(0,0,0,0.15);
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    margin: 16px 0; border: 1px solid var(--glass-border);
+    border-radius: 10px; overflow: hidden; 
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--blur));
+    -webkit-backdrop-filter: blur(var(--blur));
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
   }
   .activity-block.collapsed .steps-container { display: none; }
   .activity-header {
@@ -704,7 +754,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     const body = document.createElement('div');
     body.className = 'body';
-    body.textContent = text || '';
+    body.innerHTML = formatMarkdown(text);
     msg.appendChild(body);
     
     log.appendChild(msg);
@@ -724,7 +774,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       </div>
       <div class="steps-container"></div>
     \`;
-    block.querySelector('.activity-header').onclick = () => block.classList.toggle('collapsed');
     container.appendChild(block);
     return { 
       block, 
@@ -736,15 +785,52 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
   function formatMarkdown(text) {
     if (!text) return '';
-    return text
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      .replace(/\\\`\\\`\\\`([\\s\\S]*?)\\\`\\\`\\\`/g, '<pre><code>$1</code></pre>')
+    
+    // First escape HTML
+    let html = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    
+    // Code blocks with Apply button (using tripled backticks for the template literal regex)
+    html = html.replace(/\\\`\\\`\\\`(\\w*)\\n([\\s\\S]*?)\\\`\\\`\\\`/g, function(match, lang, code) {
+      const hex = Array.from(code).map(function(c) { return c.charCodeAt(0).toString(16).padStart(2, '0'); }).join('');
+      return '<div class="code-block-container">' +
+             '<div class="code-header"><span>' + (lang || 'code') + '</span><button class="apply-btn" data-hex="' + hex + '">Apply</button></div>' +
+             '<pre><code>' + code + '</code></pre>' +
+             '</div>';
+    });
+
+    return html
       .replace(/\\\`([^\\\`]+)\\\`/g, '<code>$1</code>')
       .replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>')
       .replace(/\\*([^*]+)\\*/g, '<em>$1</em>')
       .replace(/^\\s*-\\s+(.*)$/gm, '• $1')
       .replace(/\\n/g, '<br>');
   }
+
+  // Unified Event Delegation
+  document.addEventListener('click', (e) => {
+    // Apply Button
+    const applyBtn = e.target.closest('.apply-btn');
+    if (applyBtn && applyBtn.dataset.hex) {
+      const hex = applyBtn.dataset.hex;
+      const code = hex.match(/.{1,2}/g).map(byte => String.fromCharCode(parseInt(byte, 16))).join('');
+      vscode.postMessage({ type: 'applyCode', code });
+      return;
+    }
+
+    // Activity Header
+    const actHeader = e.target.closest('.activity-header');
+    if (actHeader) {
+      actHeader.parentElement.classList.toggle('collapsed');
+      return;
+    }
+
+    // Step Header
+    const stepHeader = e.target.closest('.step-header');
+    if (stepHeader) {
+      stepHeader.parentElement.classList.toggle('expanded');
+      return;
+    }
+  });
 
   function getToolIcon(name) {
     const icons = { read_file:'📄', write_file:'✏️', run_command:'⚡', replace_file_content:'🔧', replace_in_file:'🔧', search_workspace:'🔍', propose_edit:'✨', scaffold_project:'📦', fetch_url:'🌐', code_intelligence:'🧠', git_manager:'📋' };
@@ -780,7 +866,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       body.className = 'step-body';
       body.textContent = step.payload;
       g.appendChild(body);
-      g.querySelector('.step-header').onclick = (e) => { e.stopPropagation(); g.classList.toggle('expanded'); };
       container.appendChild(g);
       lastStepGroup = null;
       log.scrollTop = log.scrollHeight;
@@ -796,7 +881,6 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       const body = document.createElement('div');
       body.className = 'step-body';
       g.appendChild(body);
-      g.querySelector('.step-header').onclick = (e) => { e.stopPropagation(); g.classList.toggle('expanded'); };
       container.appendChild(g);
       lastStepGroup = g;
       log.scrollTop = log.scrollHeight;
@@ -1042,7 +1126,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             const u = m.payload.usage;
             const usageDiv = document.createElement('div');
             usageDiv.className = 'usage';
-            usageDiv.textContent = \`Tokens: \${u.totalTokens} (P: \${u.promptTokens}, C: \${u.completionTokens})\`;
+            usageDiv.textContent = 'Tokens: ' + u.totalTokens + ' (P: ' + u.promptTokens + ', C: ' + u.completionTokens + ')';
             activeAssistantBubble.parentElement.appendChild(usageDiv);
           }
         }
@@ -1068,11 +1152,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       }
       case 'permission_request':
         working.style.display = 'none';
-        showPrompt(\`Agent wants to use "\${m.payload.tool}". Allow?\`, 'permission', m.payload);
+        showPrompt('Agent wants to use "' + m.payload.tool + '". Allow?', 'permission', m.payload);
         break;
       case 'plan_proposal':
         working.style.display = 'none';
-        showPrompt(\`Agent proposed a plan. Review and approve?\`, 'plan', m.payload);
+        showPrompt('Agent proposed a plan. Review and approve?', 'plan', m.payload);
         break;
       case 'error':
         append('error', String(m.payload));
