@@ -1,0 +1,295 @@
+{
+  "name": "nim-agent-ide",
+  "displayName": "NIM Agent IDE",
+  "description": "Cursor-style agentic development workflows powered by NVIDIA NIM APIs",
+  "version": "0.1.0",
+  "publisher": "nim-agent",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.84.0",
+    "node": ">=18"
+  },
+  "categories": [
+    "Other",
+    "Machine Learning",
+    "Programming Languages"
+  ],
+  "keywords": [
+    "ai",
+    "nvidia",
+    "nim",
+    "agent",
+    "copilot",
+    "cursor"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "nimAgent",
+          "title": "NIM Agent",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "nimAgent": [
+        {
+          "type": "webview",
+          "id": "nimAgent.chatView",
+          "name": "NIM Agent Chat",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "nimAgent.healError",
+        "title": "NIM Agent: Heal Error",
+        "category": "NIM Agent"
+      },
+      {
+        "command": "nimAgent.inlineEdit",
+        "title": "NIM Agent: Inline Edit",
+        "category": "NIM Agent"
+      },
+      {
+        "command": "nimAgent.ask",
+        "title": "NIM Agent: Ask",
+        "category": "NIM Agent"
+      },
+      {
+        "command": "nimAgent.refactor",
+        "title": "NIM Agent: Refactor with AI",
+        "category": "NIM Agent"
+      },
+      {
+        "command": "nimAgent.fix",
+        "title": "NIM Agent: Fix this code",
+        "category": "NIM Agent"
+      },
+      {
+        "command": "nimAgent.explain",
+        "title": "NIM Agent: Explain this file",
+        "category": "NIM Agent"
+      },
+      {
+        "command": "nimAgent.openChat",
+        "title": "NIM Agent: Open Chat",
+        "category": "NIM Agent"
+      },
+      {
+        "command": "nimAgent.addApiKey",
+        "title": "NIM Agent: Add API Key",
+        "category": "NIM Agent"
+      },
+      {
+        "command": "nimAgent.removeApiKey",
+        "title": "NIM Agent: Remove API Key",
+        "category": "NIM Agent"
+      },
+      {
+        "command": "nimAgent.selectModel",
+        "title": "NIM Agent: Select Active Model",
+        "category": "NIM Agent"
+      },
+      {
+        "command": "nimAgent.selectAgent",
+        "title": "NIM Agent: Select Active Agent",
+        "category": "NIM Agent"
+      },
+      {
+        "command": "nimAgent.clearMemory",
+        "title": "NIM Agent: Clear Conversation Memory",
+        "category": "NIM Agent"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "nimAgent.inlineEdit",
+          "group": "nimAgent@1",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "nimAgent.refactor",
+          "group": "nimAgent@2",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "nimAgent.fix",
+          "group": "nimAgent@2",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "nimAgent.explain",
+          "group": "nimAgent@3"
+        },
+        {
+          "command": "nimAgent.ask",
+          "group": "nimAgent@4"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "nimAgent.ask"
+        },
+        {
+          "command": "nimAgent.refactor",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "nimAgent.fix",
+          "when": "editorHasSelection"
+        },
+        {
+          "command": "nimAgent.explain",
+          "when": "editorIsOpen"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "nimAgent.ask",
+        "key": "ctrl+alt+a",
+        "mac": "cmd+alt+a"
+      },
+      {
+        "command": "nimAgent.openChat",
+        "key": "ctrl+alt+c",
+        "mac": "cmd+alt+c"
+      },
+      {
+        "command": "nimAgent.inlineEdit",
+        "key": "ctrl+shift+i",
+        "mac": "cmd+shift+i",
+        "when": "editorHasSelection"
+      }
+    ],
+    "configuration": {
+      "title": "NIM Agent IDE",
+      "properties": {
+        "nimAgent.apiBaseUrl": {
+          "type": "string",
+          "default": "https://integrate.api.nvidia.com/v1",
+          "description": "Base URL for NVIDIA NIM (OpenAI-compatible) API."
+        },
+        "nimAgent.apiKeys": {
+          "type": "array",
+          "default": [],
+          "maxItems": 3,
+          "items": {
+            "type": "string"
+          },
+          "description": "Up to 3 NVIDIA NIM API keys. Keys are rotated automatically on rate-limit (429) or failure. Prefer using the 'Add API Key' command which stores keys in VS Code secret storage."
+        },
+        "nimAgent.useSecretStorage": {
+          "type": "boolean",
+          "default": true,
+          "description": "Store API keys in VS Code SecretStorage instead of settings.json."
+        },
+        "nimAgent.models": {
+          "type": "array",
+          "default": [
+            { "name": "meta/llama-3.1-70b-instruct", "enabled": true },
+            { "name": "mistralai/mistral-large", "enabled": true },
+            { "name": "meta/llama-3.1-8b-instruct", "enabled": true }
+          ],
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "enabled": { "type": "boolean" }
+            }
+          },
+          "description": "List of available NIM models. Add or remove entries as needed."
+        },
+        "nimAgent.defaultModel": {
+          "type": "string",
+          "default": "meta/llama-3.1-70b-instruct",
+          "description": "Default model to use when no model is explicitly selected."
+        },
+        "nimAgent.defaultAgent": {
+          "type": "string",
+          "default": "chat",
+          "enum": ["chat", "coder", "debugger", "refactor"],
+          "description": "Default agent role."
+        },
+        "nimAgent.maxAgentSteps": {
+          "type": "number",
+          "default": 8,
+          "minimum": 1,
+          "maximum": 32,
+          "description": "Maximum reasoning/tool-use steps per agent run."
+        },
+        "nimAgent.streaming": {
+          "type": "boolean",
+          "default": true,
+          "description": "Stream tokens live to the chat panel."
+        },
+        "nimAgent.temperature": {
+          "type": "number",
+          "default": 0.4,
+          "minimum": 0,
+          "maximum": 2,
+          "description": "Sampling temperature."
+        },
+        "nimAgent.maxTokens": {
+          "type": "number",
+          "default": 2048,
+          "minimum": 64,
+          "maximum": 32768,
+          "description": "Maximum tokens per response."
+        },
+        "nimAgent.workspaceContextLimitBytes": {
+          "type": "number",
+          "default": 200000,
+          "description": "Maximum total bytes of workspace files included as context."
+        },
+        "nimAgent.cacheEnabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable simple in-memory response cache."
+        },
+        "nimAgent.providers": {
+          "type": "array",
+          "default": [
+            {
+              "id": "nvidia-nim",
+              "label": "NVIDIA NIM",
+              "baseUrl": "https://integrate.api.nvidia.com/v1",
+              "active": true
+            }
+          ],
+          "items": {
+            "type": "object"
+          },
+          "description": "Registered LLM providers. Designed to be extended with OpenAI, Anthropic, etc."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "pnpm run build",
+    "build": "node esbuild.config.mjs --production",
+    "watch": "node esbuild.config.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "package": "vsce package --no-dependencies",
+    "clean": "rimraf dist *.vsix"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.84.0",
+    "@vscode/vsce": "^3.2.1",
+    "esbuild": "0.27.3",
+    "rimraf": "^6.0.1",
+    "typescript": "~5.9.2"
+  },
+  "dependencies": {
+    "axios": "^1.7.9"
+  }
+}

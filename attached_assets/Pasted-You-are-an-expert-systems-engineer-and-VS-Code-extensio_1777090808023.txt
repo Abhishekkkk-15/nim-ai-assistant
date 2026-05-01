@@ -1,0 +1,168 @@
+You are an expert systems engineer and VS Code extension developer.
+
+Your task is to build a production-grade VS Code extension called "NIM Agent IDE", inspired by Cursor IDE, but powered by NVIDIA NIM APIs.
+
+This is NOT a simple chat extension. It must implement a full agentic development workflow system.
+
+🎯 CORE GOAL
+
+Create a VS Code extension that allows users to:
+
+Interact with AI agents inside the editor
+Execute multi-step coding workflows
+Modify files automatically
+Debug, refactor, and generate code contextually
+🧠 CORE FEATURES
+
+1. Multi-Model Support (NVIDIA NIM)
+
+Integrate NVIDIA NIM API
+Allow dynamic model selection
+Users can:
+Add/remove models
+Set default model
+Store models in config:
+{
+
+  "models": [
+
+    { "name": "nim-llama3", "enabled": true },
+
+    { "name": "nim-mistral", "enabled": true }
+
+  ]
+
+}
+
+2. API Key Rotation System
+
+Users can add up to 3 API keys
+Automatically rotate keys when:
+Rate limit hit (429)
+Request failure
+Retry failed request with next key
+Implement:
+
+Key manager class
+Round-robin rotation
+Failure tracking
+3. Agent System (IMPORTANT)
+
+Design a modular agent system:
+
+Each agent has:
+
+role (coder, debugger, planner)
+tools
+memory
+execution loop
+Agents:
+
+Code Generator Agent
+Debug Agent
+Refactor Agent
+Chat Assistant Agent
+4. Tooling System
+
+Agents can use tools:
+
+File Reader
+File Writer
+Terminal Executor
+Search in workspace
+Design tools as pluggable modules.
+
+5. Context Awareness
+
+Read current file
+Read selected code
+Read entire workspace (limited size)
+Maintain conversation memory
+6. UI (VS Code)
+
+Implement:
+
+Sidebar panel (like Cursor)
+Chat interface
+Agent selector dropdown
+Model selector dropdown
+7. Commands
+
+Add commands:
+
+"Ask NIM Agent"
+"Refactor with AI"
+"Fix this code"
+"Explain this file"
+8. Streaming Responses
+
+Use streaming API if available
+Show tokens live in UI
+9. Config System
+
+Use VS Code settings:
+
+API keys
+Active model
+Agent preferences
+🏗️ ARCHITECTURE
+
+Use clean modular architecture:
+
+src/ extension.ts core/ agent/ tools/ memory/ models/ api/ ui/ sidebar/ chat/ utils/
+
+🔁 AGENT EXECUTION LOOP
+
+Agent should:
+
+Take user input
+
+Plan steps
+
+Use tools
+
+Modify files if needed
+
+Return final output
+
+⚙️ TECH STACK
+
+TypeScript
+VS Code Extension API
+Node.js
+Fetch / Axios for API calls
+🛡️ ERROR HANDLING
+
+Handle API failures
+Handle rate limits
+Graceful fallback
+Logging system
+📦 OUTPUT
+
+Generate:
+
+Full folder structure
+
+package.json
+
+extension.ts entry point
+
+Key modules implementation
+
+Sample agent implementation
+
+API key rotation logic
+
+Basic UI
+
+⚠️ IMPORTANT RULES
+
+Write clean, production-ready code
+Use TypeScript types everywhere
+Keep code modular and extensible
+Do NOT hardcode values
+Add comments for complex logic
+🔥 BONUS (if possible)
+
+Add support for future providers (OpenAI, etc.)
+Add simple local caching/memory
