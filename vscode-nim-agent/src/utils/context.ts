@@ -9,6 +9,7 @@ import type { LocalCache } from "../core/memory/LocalCache";
 import type { AgentRegistry } from "../core/agent/AgentRegistry";
 import type { ChatViewProvider } from "../ui/sidebar/ChatViewProvider";
 import type { ContextManager } from "../core/context/ContextManager";
+import type { HistoryManager } from "../core/memory/HistoryManager";
 
 /**
  * Lightweight DI container shared across modules.
@@ -26,4 +27,5 @@ export class ExtensionContextStore {
   agentRegistry!: AgentRegistry;
   chatProvider!: ChatViewProvider;
   contextManager!: ContextManager;
+  historyManager!: HistoryManager;
 }

@@ -11,15 +11,16 @@ interface InboundMessage {
     | "ready" | "send" | "cancel" | "selectAgent" | "selectModel" | "clearMemory"
     | "openSettings" | "addKey" | "permissionResponse" | "planApproval"
     | "toggleAutoPermit" | "togglePlanMode" | "reviewFile" | "attachFile"
-    | "detachFile" | "pinFile" | "unpinFile" | "applyCode" | "commitChanges" | "diffReview";
+    | "detachFile" | "pinFile" | "unpinFile" | "applyCode" | "commitChanges" | "diffReview"
+    | "newChat" | "loadSession";
   text?: string; agent?: AgentRole; model?: string; allowed?: boolean;
-  approved?: boolean; path?: string; code?: string;
+  approved?: boolean; path?: string; code?: string; sessionId?: string;
 }
 
 interface OutboundMessage {
   type:
     | "state" | "user" | "assistant_start" | "assistant_token" | "assistant_end"
-    | "step" | "error" | "info" | "permission_request" | "plan_proposal";
+    | "step" | "error" | "info" | "permission_request" | "plan_proposal" | "session_loaded";
   payload?: unknown;
 }
 
@@ -63,7 +64,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         autoPermit: this.autoPermit,
         planMode: this.planMode,
         attachedFiles: Array.from(this.attachedFiles),
-        pinnedFiles: this.store.contextManager.getAll().map(f => f.path)
+        pinnedFiles: this.store.contextManager.getAll().map(f => f.path),
+        sessions: this.store.historyManager.getSessions().map(s => ({ id: s.id, title: s.title })),
+        currentSessionId: this.store.historyManager.getCurrentSessionId()
       }
     });
   }
@@ -76,7 +79,30 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       case "ready": this.refreshState(); return;
       case "send": await this.runPrompt(msg.text || "", msg.agent); return;
       case "cancel": this.currentAbort?.abort(); return;
-      case "clearMemory": this.store.memory.clear(); this.post({ type: "info", payload: "Memory cleared" }); return;
+      case "clearMemory": 
+        await this.store.historyManager.clearAll();
+        this.store.memory.clear(); 
+        this.post({ type: "info", payload: "All history cleared" }); 
+        this.refreshState();
+        return;
+      case "newChat":
+        await this.store.historyManager.createSession();
+        this.store.memory.clear();
+        this.post({ type: "session_loaded", payload: { messages: [] } });
+        this.refreshState();
+        return;
+      case "loadSession":
+        if (msg.sessionId) {
+          const session = await this.store.historyManager.loadSession(msg.sessionId);
+          if (session) {
+            this.store.memory.clear();
+            // Load messages into current memory
+            session.messages.forEach(m => this.store.memory.add({ role: m.role, content: m.content }));
+            this.post({ type: "session_loaded", payload: { messages: session.messages } });
+            this.refreshState();
+          }
+        }
+        return;
       case "toggleAutoPermit": this.autoPermit = !this.autoPermit; this.refreshState(); return;
       case "togglePlanMode": this.planMode = !this.planMode; this.refreshState(); return;
       case "permissionResponse": this.permissionResolver?.(!!msg.allowed); this.permissionResolver = undefined; return;
@@ -118,6 +144,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private async runPrompt(prompt: string, agentRole?: AgentRole): Promise<void> {
     const role = agentRole || "chat";
     const agent = this.store.agentRegistry.get(role);
+    
+    // Save user message to history
+    await this.store.historyManager.appendMessage({ role: "user", content: prompt });
+    
     this.post({ type: "user", payload: prompt });
     this.post({ type: "assistant_start", payload: { agent: role } });
     this.currentAbort = new AbortController();
@@ -138,7 +168,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           return new Promise(res => this.permissionResolver = res);
         }
       });
+      
+      // Save assistant response to history
+      await this.store.historyManager.appendMessage({ role: "assistant", content: result.content });
+      
       this.post({ type: "assistant_end", payload: { content: result.content } });
+      this.refreshState(); // Refresh sessions list in case title updated
     } catch (err) { this.post({ type: "error", payload: String(err) }); }
   }
 
@@ -182,15 +217,26 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       .step-body { margin-top: 4px; font-size: 10px; opacity: 0.6; font-family: var(--vscode-editor-font-family); background: rgba(0,0,0,0.1); padding: 2px 4px; border-radius: 4px; }
       .perm-request { background: var(--vscode-editor-findMatchHighlightBackground); border: 1px solid var(--vscode-inputOption-activeBorder); border-radius: 8px; padding: 12px; margin: 12px 0; }
       .chip { display: inline-flex; align-items: center; gap: 6px; background: rgba(0,0,0,0.2); padding: 3px 10px; border-radius: 16px; font-size: 10px; margin: 3px; border: 1px solid var(--glass-border); }
+      .history-overlay { position: absolute; top: 50px; left: 10px; right: 10px; bottom: 80px; background: var(--vscode-sideBar-background); border: 1px solid var(--vscode-panel-border); border-radius: 12px; z-index: 100; display: none; flex-direction: column; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+      .history-header { padding: 12px; border-bottom: 1px solid var(--vscode-panel-border); font-weight: 800; font-size: 12px; display: flex; justify-content: space-between; align-items: center; }
+      .history-list { flex: 1; overflow-y: auto; padding: 8px; }
+      .history-item { padding: 10px; border-radius: 6px; cursor: pointer; font-size: 12px; margin-bottom: 4px; border: 1px solid transparent; }
+      .history-item:hover { background: rgba(255,255,255,0.05); }
+      .history-item.active { border-color: var(--accent); background: rgba(255,255,255,0.03); }
       .composer { padding: 16px; border-top: 1px solid var(--vscode-panel-border); display: flex; flex-direction: column; gap: 12px; }
       textarea { background: var(--vscode-input-background); color: var(--vscode-input-foreground); border: 1px solid var(--vscode-input-border); padding: 12px; border-radius: 8px; resize: none; min-height: 50px; font-family: inherit; }
     </style></head><body>
       <div class="toolbar">
-        <select id="agentSel"></select><select id="modelSel"></select><div style="flex:1"></div>
-        <button id="planBtn" class="ghost">Plan</button><button id="autoBtn" class="ghost">Auto</button>
-        <button id="reviewBtn" class="ghost">🛡️</button><button id="clearBtn" class="ghost">🗑️</button>
+        <button id="historyBtn" class="ghost" title="Chat History">📜</button>
+        <button id="newChatBtn" class="ghost" title="New Chat">➕</button>
+        <div style="flex:1"></div>
+        <select id="agentSel"></select><select id="modelSel"></select>
       </div>
       <div id="log"></div>
+      <div id="historyOverlay" class="history-overlay">
+        <div class="history-header"><span>Past Chats</span><span id="closeHistory" style="cursor:pointer">×</span></div>
+        <div id="historyList" class="history-list"></div>
+      </div>
       <div id="contextBank" style="display:none"><div id="pinnedList" style="padding:0 10px;"></div></div>
       <div id="contextBar" style="padding:4px 12px;"></div>
       <div class="composer">
@@ -212,11 +258,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         const sendBtn = document.getElementById('sendBtn');
         const cancelBtn = document.getElementById('cancelBtn');
         const clearBtn = document.getElementById('clearBtn');
-        const planBtn = document.getElementById('planBtn');
-        const autoBtn = document.getElementById('autoBtn');
-        const reviewBtn = document.getElementById('reviewBtn');
-        const contextBar = document.getElementById('contextBar');
-        const pinnedList = document.getElementById('pinnedList');
+        const historyBtn = document.getElementById('historyBtn');
+        const newChatBtn = document.getElementById('newChatBtn');
+        const historyOverlay = document.getElementById('historyOverlay');
+        const historyList = document.getElementById('historyList');
+        const closeHistory = document.getElementById('closeHistory');
         const status = document.getElementById('status');
         
         let hasEdits = false, activeBubble = null, activeSteps = null, lastTool = null, streamingState = { isJson: false, jsonBuffer: '', isFinal: false, finalExtracted: '' };
@@ -243,11 +289,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           return h.replace(/Thought:/g, '<strong>Thought:</strong>').replace(/Plan:/g, '<strong>Plan:</strong>').replace(/^\\s*\\*\\s+(.*)$/gm, '• $1').replace(/\\n/g, '<br>') + stats;
         }
 
+        function renderMessage(role, content) {
+          const d = document.createElement('div'); d.className = 'msg ' + role;
+          d.innerHTML = '<div class="who">'+(role==='user'?'You':role)+'</div><div class="body">'+format(content)+'</div>';
+          log.appendChild(d);
+        }
+
         document.addEventListener('click', e => {
-          const t = e.target.closest('.apply-btn, .review-btn, [data-action], .activity-header, .perm-btn');
+          const t = e.target.closest('.apply-btn, .review-btn, [data-action], .activity-header, .perm-btn, .history-item');
           if (!t) return;
           if (t.classList.contains('apply-btn')) vscode.postMessage({ type: 'applyCode', code: btou(t.dataset.code) });
           else if (t.classList.contains('review-btn')) vscode.postMessage({ type: 'diffReview' });
+          else if (t.classList.contains('history-item')) { vscode.postMessage({ type: 'loadSession', sessionId: t.dataset.id }); historyOverlay.style.display = 'none'; }
           else if (t.classList.contains('perm-btn')) { vscode.postMessage({ type: 'permissionResponse', allowed: t.dataset.allow === 'true' }); t.parentElement.innerHTML = '<i>' + (t.dataset.allow === 'true' ? 'Allowed' : 'Denied') + '</i>'; }
           else if (t.dataset.action === 'pin') vscode.postMessage({ type: 'pinFile', path: t.dataset.path });
           else if (t.dataset.action === 'unpin') vscode.postMessage({ type: 'unpinFile', path: t.dataset.path });
@@ -256,11 +309,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         });
 
         sendBtn.onclick = () => { const t = input.value.trim(); if (t) { vscode.postMessage({ type: 'send', text: t, agent: agentSel.value, model: modelSel.value }); input.value = ''; } };
+        historyBtn.onclick = () => { historyOverlay.style.display = historyOverlay.style.display === 'flex' ? 'none' : 'flex'; };
+        newChatBtn.onclick = () => vscode.postMessage({ type: 'newChat' });
+        closeHistory.onclick = () => historyOverlay.style.display = 'none';
         cancelBtn.onclick = () => vscode.postMessage({ type: 'cancel' });
-        clearBtn.onclick = () => { if (confirm('Clear chat history?')) { log.innerHTML = ''; vscode.postMessage({ type: 'clearMemory' }); } };
-        planBtn.onclick = () => vscode.postMessage({ type: 'togglePlanMode' });
-        autoBtn.onclick = () => vscode.postMessage({ type: 'toggleAutoPermit' });
-        reviewBtn.onclick = () => vscode.postMessage({ type: 'reviewFile' });
         input.onkeydown = e => { if (e.ctrlKey && e.key === 'Enter') sendBtn.click(); };
 
         window.addEventListener('message', e => {
@@ -268,18 +320,18 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           if (m.type === 'state') {
             agentSel.innerHTML = m.payload.agents.map(a => '<option value="'+a.role+'"'+(a.role===m.payload.activeAgent?' selected':'')+'>'+a.label+'</option>').join('');
             modelSel.innerHTML = m.payload.models.map(m2 => '<option value="'+m2.name+'"'+(m2.name===m.payload.activeModel?' selected':'')+'>'+m2.name+'</option>').join('');
-            planBtn.className = m.payload.planMode ? 'active' : 'ghost';
-            autoBtn.className = m.payload.autoPermit ? 'active' : 'ghost';
             contextBar.innerHTML = m.payload.attachedFiles.map(p => '<div class="chip"><span>'+p+'</span><span data-action="pin" data-path="'+p+'">📌</span><span data-action="detach" data-path="'+p+'">×</span></div>').join('');
             pinnedList.innerHTML = m.payload.pinnedFiles.map(p => '<div class="chip"><span>'+p+'</span><span data-action="unpin" data-path="'+p+'">×</span></div>').join('');
             document.getElementById('contextBank').style.display = m.payload.pinnedFiles.length ? 'block' : 'none';
+            historyList.innerHTML = m.payload.sessions.map(s => '<div class="history-item'+(s.id===m.payload.currentSessionId?' active':'')+'" data-id="'+s.id+'">'+s.title+'</div>').join('');
+          } else if (m.type === 'session_loaded') {
+            log.innerHTML = ''; m.payload.messages.forEach(msg => renderMessage(msg.role, msg.content)); log.scrollTop = log.scrollHeight;
           } else if (m.type === 'user') {
-            const d = document.createElement('div'); d.className = 'msg user'; d.innerHTML = '<div class="who">You</div><div class="body">'+format(m.payload)+'</div>'; log.appendChild(d); log.scrollTop = log.scrollHeight;
+            renderMessage('user', m.payload); log.scrollTop = log.scrollHeight;
           } else if (m.type === 'assistant_start') {
             const d = document.createElement('div'); d.className = 'msg assistant';
             d.innerHTML = '<div class="who">'+m.payload.agent+'</div><div class="body"></div><div class="activity-block collapsed" style="display:none"><div class="activity-header"><span class="activity-icon">⚙️</span><span class="activity-title">Activity Details</span><span class="activity-chevron">▼</span></div><div class="steps-container"></div></div>';
-            log.appendChild(d);
-            activeBubble = d.querySelector('.body'); activeSteps = d.querySelector('.steps-container'); streamingState = { isJson: false, jsonBuffer: '', isFinal: false, finalExtracted: '' }; hasEdits = false; cancelBtn.style.display = 'block'; status.textContent = 'Thinking...';
+            log.appendChild(d); activeBubble = d.querySelector('.body'); activeSteps = d.querySelector('.steps-container'); streamingState = { isJson: false, jsonBuffer: '', isFinal: false, finalExtracted: '' }; hasEdits = false; cancelBtn.style.display = 'block'; status.textContent = 'Thinking...';
           } else if (m.type === 'assistant_token') {
             status.textContent = 'Typing...'; const token = m.payload; const fence = String.fromCharCode(96).repeat(3); streamingState.jsonBuffer += token;
             if (!streamingState.isJson && (streamingState.jsonBuffer.includes(fence + 'json') || streamingState.jsonBuffer.includes('{"tool"'))) {

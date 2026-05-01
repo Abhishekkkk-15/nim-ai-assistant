@@ -20,6 +20,7 @@ import { ConversationMemory } from "./core/memory/ConversationMemory";
 import { LocalCache } from "./core/memory/LocalCache";
 import { AgentRegistry } from "./core/agent/AgentRegistry";
 import { ContextManager } from "./core/context/ContextManager";
+import { HistoryManager } from "./core/memory/HistoryManager";
 import { registerInlineEditCommand } from "./commands/InlineEditCommand";
 import { registerErrorHealer } from "./providers/ErrorHealerProvider";
 import { ChatAssistantAgent } from "./core/agent/ChatAssistantAgent";
@@ -62,6 +63,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const contextManager = new ContextManager(context);
   store.contextManager = contextManager;
+
+  const historyManager = new HistoryManager(context);
+  store.historyManager = historyManager;
 
   // Tools
   const toolRegistry = new ToolRegistry(logger);
