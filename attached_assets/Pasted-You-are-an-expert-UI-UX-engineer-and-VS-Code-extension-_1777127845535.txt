@@ -1,0 +1,217 @@
+You are an expert UI/UX engineer and VS Code extension frontend specialist.
+
+Your task is to **completely redesign the existing Chat + Sidebar UI** of my VS Code extension to match the **look, feel, and interaction quality of Claude Code (Anthropic’s VS Code extension)** — while preserving all existing features and logic.
+
+This is a **UI/UX redesign task, NOT a rewrite of backend logic**.
+
+---
+
+## 🎯 OBJECTIVE
+
+Transform the current UI into a **modern, minimal, high-signal developer interface** with:
+
+* Clean layout
+* Strong typography
+* Smooth interactions
+* Clear agent workflow visibility
+
+The final UI should feel like a **premium AI coding tool (Cursor / Claude Code level)**.
+
+---
+
+## ⚠️ HARD CONSTRAINTS
+
+* DO NOT break existing functionality
+* DO NOT remove features
+* DO NOT change API logic
+* ONLY improve UI, layout, and interaction
+* Keep all existing commands working
+
+---
+
+## 🎨 DESIGN REQUIREMENTS
+
+### 1. Overall Style
+
+* Minimal, clean, developer-focused
+* Dark theme first (VS Code theme compatible)
+* Soft contrast, not harsh colors
+* Consistent spacing system (8px grid)
+
+---
+
+### 2. Typography
+
+* Match Claude Code style:
+
+  * Clean sans-serif
+  * Proper hierarchy:
+
+    * Headers
+    * Messages
+    * Metadata
+* Improve readability for long conversations
+
+---
+
+### 3. Chat UI Redesign
+
+Each message must support:
+
+* User vs Agent distinction
+* Message grouping
+* Timestamp or subtle metadata
+* Streaming response rendering
+
+---
+
+### 4. File Preview UI (IMPORTANT)
+
+Implement inline file previews:
+
+* Show code blocks as:
+
+  * Syntax highlighted
+  * Scrollable
+  * With file name header
+
+Example:
+
+```txt
+📄 app.ts
+------------------
+<code preview>
+```
+
+---
+
+### 5. Subtasks / Agent Steps (CRITICAL)
+
+Implement collapsible subtask system:
+
+Each agent response can contain steps like:
+
+* Planning
+* File edits
+* Tool usage
+
+UI requirements:
+
+* Collapsible sections
+* Expand/collapse toggle
+* Step status indicators:
+
+  * ⏳ running
+  * ✅ completed
+  * ❌ failed
+
+---
+
+### 6. Agent Status Indicator
+
+Show real-time agent state:
+
+* Idle
+* Thinking
+* Executing tools
+* Completed
+
+Display as:
+
+* Animated indicator
+* Status text
+
+---
+
+### 7. Sidebar Redesign
+
+Improve:
+
+* Layout structure
+* Sections:
+
+  * Chat
+  * Agents
+  * Models
+* Add clear separation and hierarchy
+
+---
+
+### 8. Input Box UX
+
+* Auto-resizing textarea
+* Shortcut support:
+
+  * Enter → send
+  * Shift+Enter → newline
+* Attach context (file, selection)
+
+---
+
+### 9. Animations & Microinteractions
+
+* Smooth message appearance
+* Collapse/expand animation
+* Loading indicators
+* Streaming text effect
+
+---
+
+### 10. Componentization (IMPORTANT)
+
+Refactor UI into reusable components:
+
+* ChatMessage
+* AgentStep
+* FilePreview
+* SidebarSection
+* StatusIndicator
+
+---
+
+## 🏗️ IMPLEMENTATION DETAILS
+
+* Use TypeScript
+* Follow VS Code Webview UI constraints
+* Use modular component structure
+* Avoid heavy dependencies
+
+---
+
+## 📦 OUTPUT REQUIREMENTS
+
+Provide:
+
+1. Updated UI component structure
+2. Refactored Chat UI code
+3. Sidebar UI improvements
+4. New reusable components
+5. Styling system (CSS or Tailwind-like)
+6. Example of:
+
+   * Chat message with steps
+   * File preview
+   * Agent execution flow
+
+---
+
+## 🔥 UX BENCHMARK
+
+The final result should feel comparable to:
+
+* Claude Code VS Code extension
+* Cursor IDE
+* Modern AI dev tools
+
+---
+
+## 🚫 AVOID
+
+* Cluttered UI
+* Inconsistent spacing
+* Overuse of bright colors
+* Breaking existing logic
+
+---
+
+Start by analyzing the current UI structure, then propose a redesigned component hierarchy before implementing.
