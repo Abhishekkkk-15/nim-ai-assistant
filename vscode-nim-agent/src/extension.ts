@@ -19,6 +19,7 @@ import { ReplaceFileContentTool } from "./core/tools/ReplaceFileContentTool";
 import { ConversationMemory } from "./core/memory/ConversationMemory";
 import { LocalCache } from "./core/memory/LocalCache";
 import { AgentRegistry } from "./core/agent/AgentRegistry";
+import { ContextManager } from "./core/context/ContextManager";
 import { registerInlineEditCommand } from "./commands/InlineEditCommand";
 import { registerErrorHealer } from "./providers/ErrorHealerProvider";
 import { ChatAssistantAgent } from "./core/agent/ChatAssistantAgent";
@@ -58,6 +59,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   store.memory = memory;
   const cache = new LocalCache(100);
   store.cache = cache;
+
+  const contextManager = new ContextManager(context);
+  store.contextManager = contextManager;
 
   // Tools
   const toolRegistry = new ToolRegistry(logger);

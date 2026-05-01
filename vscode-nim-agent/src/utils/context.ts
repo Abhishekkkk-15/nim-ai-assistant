@@ -8,6 +8,7 @@ import type { ConversationMemory } from "../core/memory/ConversationMemory";
 import type { LocalCache } from "../core/memory/LocalCache";
 import type { AgentRegistry } from "../core/agent/AgentRegistry";
 import type { ChatViewProvider } from "../ui/sidebar/ChatViewProvider";
+import type { ContextManager } from "../core/context/ContextManager";
 
 /**
  * Lightweight DI container shared across modules.
@@ -24,4 +25,5 @@ export class ExtensionContextStore {
   cache!: LocalCache;
   agentRegistry!: AgentRegistry;
   chatProvider!: ChatViewProvider;
+  contextManager!: ContextManager;
 }

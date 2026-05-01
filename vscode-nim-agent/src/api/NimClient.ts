@@ -62,63 +62,78 @@ export class NimClient extends BaseProvider {
     signal?: AbortSignal
   ): Promise<CompletionResult> {
     return this.withRotation(async (apiKey) => {
-      const res = await this.http.post(
-        "/chat/completions",
-        this.toRequestBody(req, true),
-        {
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            Accept: "text/event-stream"
-          },
-          responseType: "stream",
-          signal: signal as AbortSignal | undefined
-        }
-      );
-
-      let buffer = "";
-      let full = "";
-      let resolvedModel = req.model;
-
-      const stream = res.data as NodeJS.ReadableStream;
-      await new Promise<void>((resolve, reject) => {
-        stream.on("data", (chunk: Buffer) => {
-          buffer += chunk.toString("utf8");
-          let idx: number;
-          // SSE frames are separated by blank lines
-          while ((idx = buffer.indexOf("\n\n")) !== -1) {
-            const frame = buffer.slice(0, idx).trim();
-            buffer = buffer.slice(idx + 2);
-            if (!frame) {
-              continue;
-            }
-            for (const line of frame.split("\n")) {
-              if (!line.startsWith("data:")) {
-                continue;
-              }
-              const payload = line.slice(5).trim();
-              if (!payload || payload === "[DONE]") {
-                continue;
-              }
-              try {
-                const json = JSON.parse(payload);
-                resolvedModel = json.model ?? resolvedModel;
-                const delta = json?.choices?.[0]?.delta?.content;
-                if (typeof delta === "string" && delta.length > 0) {
-                  full += delta;
-                  handlers.onToken(delta);
-                }
-              } catch (err) {
-                this.logger.debug("Failed to parse SSE frame, skipping.", err);
-              }
-            }
+      try {
+        const res = await this.http.post(
+          "/chat/completions",
+          this.toRequestBody(req, true),
+          {
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              Accept: "text/event-stream"
+            },
+            responseType: "stream",
+            signal: signal as AbortSignal | undefined
           }
-        });
-        stream.on("end", () => resolve());
-        stream.on("error", (err) => reject(err));
-      });
+        );
 
-      handlers.onDone?.(full);
-      return { content: full, model: resolvedModel };
+        let buffer = "";
+        let full = "";
+        let resolvedModel = req.model;
+
+        const stream = res.data as NodeJS.ReadableStream;
+        await new Promise<void>((resolve, reject) => {
+          stream.on("data", (chunk: Buffer) => {
+            buffer += chunk.toString("utf8");
+            let idx: number;
+            while ((idx = buffer.indexOf("\n\n")) !== -1) {
+              const frame = buffer.slice(0, idx).trim();
+              buffer = buffer.slice(idx + 2);
+              if (!frame) continue;
+              for (const line of frame.split("\n")) {
+                if (!line.startsWith("data:")) continue;
+                const payload = line.slice(5).trim();
+                if (!payload || payload === "[DONE]") continue;
+                try {
+                  const json = JSON.parse(payload);
+                  resolvedModel = json.model ?? resolvedModel;
+                  const delta = json?.choices?.[0]?.delta?.content;
+                  if (typeof delta === "string" && delta.length > 0) {
+                    full += delta;
+                    handlers.onToken(delta);
+                  }
+                } catch (err) {
+                  this.logger.debug("Failed to parse SSE frame", err);
+                }
+              }
+            }
+          });
+          stream.on("end", () => resolve());
+          stream.on("error", (err) => reject(err));
+        });
+
+        handlers.onDone?.(full);
+        return { content: full, model: resolvedModel };
+      } catch (err) {
+        if (axios.isAxiosError(err) && err.response?.data?.readable) {
+          const errorBody = await this.readStream(err.response.data);
+          try {
+            const json = JSON.parse(errorBody);
+            throw new Error(json.error?.message || json.message || errorBody);
+          } catch {
+            throw new Error(errorBody);
+          }
+        }
+        throw err;
+      }
+    });
+  }
+
+  private async readStream(stream: NodeJS.ReadableStream): Promise<string> {
+    return new Promise((resolve) => {
+      let data = "";
+      stream.on("data", (chunk) => data += chunk);
+      stream.on("end", () => resolve(data));
+      stream.on("error", () => resolve("Unknown stream error"));
     });
   }
 

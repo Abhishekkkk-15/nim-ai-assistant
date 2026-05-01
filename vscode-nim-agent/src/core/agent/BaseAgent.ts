@@ -299,7 +299,10 @@ export abstract class BaseAgent {
     const allowedNote = allowed
       ? `You may ONLY use these tools: ${allowed.join(", ")}.`
       : "You may use any of the listed tools.";
-    const ctxBlock = ctx ? this.formatContext(ctx) : "(no editor context provided)";
+    
+    const contextBank = this.store.contextManager?.formatForPrompt() || "";
+    const autoPermit = this.store.chatProvider?.isAutoPermit() ? "\nIMPORTANT: Auto-permit mode is ENABLED. You may apply changes DIRECTLY using write_file or replace_file_content without proposing them first if you are confident." : "";
+    const ctxBlock = (ctx ? this.formatContext(ctx) : "(no editor context provided)") + "\n" + contextBank + autoPermit;
 
     let planInstruction = "";
     if (this.store.chatProvider?.isPlanMode()) {
