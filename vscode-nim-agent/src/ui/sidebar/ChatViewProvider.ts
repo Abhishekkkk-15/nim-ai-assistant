@@ -164,7 +164,43 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             this.post({ type: "error", payload: `Failed to set model: ${err?.message || String(err)}` });
           }
         }
-        await this.runPrompt(msg.text || "", msg.agent);
+        
+        let text = msg.text || "";
+        if (text.startsWith("/")) {
+          const firstSpace = text.indexOf(" ");
+          const command = firstSpace !== -1 ? text.substring(1, firstSpace) : text.substring(1);
+          const skill = this.store.skillManager.getSkill(command);
+          if (skill) {
+            this.store.skillManager.setActiveSkill(command);
+            this.post({ type: "info", payload: `Activated skill: ${skill.metadata.name}` });
+            text = firstSpace !== -1 ? text.substring(firstSpace + 1) : "";
+            if (!text) {
+               // If it's just the slash command, give a generic prompt to start the skill
+               text = `Starting ${skill.metadata.name} skill. How can I help you?`;
+            }
+          } else if (command === "skills") {
+             const skills = this.store.skillManager.listSkills();
+             const list = skills.map(s => `- **/${s.name}**: ${s.description}`).join("\n");
+             this.post({ type: "info", payload: `### Available Skills\n\n${list}` });
+             return;
+          } else if (command === "reset" || command === "stop") {
+             this.store.skillManager.setActiveSkill(undefined);
+             this.post({ type: "info", payload: "Skill deactivated." });
+             return;
+          }
+        } else {
+           // Natural language detection (optional but requested)
+           const skills = this.store.skillManager.listSkills();
+           for (const s of skills) {
+             if (text.toLowerCase().includes(`use the ${s.name} skill`) || text.toLowerCase().includes(`run ${s.name}`)) {
+                this.store.skillManager.setActiveSkill(s.name);
+                this.post({ type: "info", payload: `Activated skill: ${s.name} (detected via natural language)` });
+                break;
+             }
+           }
+        }
+
+        await this.runPrompt(text, msg.agent);
         return;
       case "selectModel":
         if (msg.model) {

@@ -16,6 +16,7 @@ import { AnalyticsManager } from "../core/memory/AnalyticsManager";
 import type { TreeSitterService } from "../core/context/parsers/TreeSitterService";
 import type { MerkleTree } from "../core/context/state/MerkleTree";
 import type { CodeGraphService } from "../core/context/graph/CodeGraphService";
+import type { SkillManager } from "../core/agent/SkillManager";
 
 /**
  * Lightweight DI container shared across modules.
@@ -40,4 +41,5 @@ export class ExtensionContextStore {
   treeSitter!: TreeSitterService;
   merkleTree!: MerkleTree;
   codeGraph!: CodeGraphService;
+  skillManager!: SkillManager;
 }

@@ -351,7 +351,8 @@ export abstract class BaseAgent {
     const contextBank = this.store.contextManager?.formatForPrompt() || "";
     const workspaceRules = this.store.rulesLoader ? await this.store.rulesLoader.getPromptBlock() : "";
     const autoPermit = this.store.chatProvider?.isAutoPermit() ? "\nIMPORTANT: Auto-permit mode is ACTIVE. You are authorized to modify files DIRECTLY and IMMEDIATELY using tools like write_file, replace_file_content, or multi_replace_file_content. Do NOT waste time proposing edits; just apply the fix." : "";
-    const ctxBlock = (ctx ? this.formatContext(ctx) : "(no editor context provided)") + "\n" + contextBank + workspaceRules + autoPermit;
+    const skillInjection = this.store.skillManager?.getSkillInjectionPrompt() || "";
+    const ctxBlock = (ctx ? this.formatContext(ctx) : "(no editor context provided)") + "\n" + contextBank + workspaceRules + autoPermit + skillInjection;
 
     let planInstruction = "";
     if (this.store.chatProvider?.isPlanMode()) {

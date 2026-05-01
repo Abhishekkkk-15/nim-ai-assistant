@@ -30,6 +30,7 @@ import { FindReferencesTool } from "./core/tools/FindReferencesTool";
 import { GetFileExportsTool } from "./core/tools/GetFileExportsTool";
 import { GlobFilesTool } from "./core/tools/GlobFilesTool";
 import { MultiReplaceFileContentTool } from "./core/tools/MultiReplaceFileContentTool";
+import { ManageSkillConfigTool } from "./core/tools/ManageSkillConfigTool";
 import { ConversationMemory } from "./core/memory/ConversationMemory";
 import { LocalCache } from "./core/memory/LocalCache";
 import { AgentRegistry } from "./core/agent/AgentRegistry";
@@ -37,6 +38,7 @@ import { ContextManager } from "./core/context/ContextManager";
 import { RulesLoader } from "./core/context/RulesLoader";
 import { HistoryManager } from "./core/memory/HistoryManager";
 import { AnalyticsManager } from "./core/memory/AnalyticsManager";
+import { SkillManager } from "./core/agent/SkillManager";
 import { TreeSitterService } from "./core/context/parsers/TreeSitterService";
 import { MerkleTree } from "./core/context/state/MerkleTree";
 import * as fs from "fs";
@@ -119,6 +121,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const historyManager = new HistoryManager(context);
   store.historyManager = historyManager;
 
+  const skillManager = new SkillManager(store);
+  await skillManager.initialize();
+  store.skillManager = skillManager;
+
   // Tools
   const toolRegistry = new ToolRegistry(logger);
   toolRegistry.register(new FileReaderTool());
@@ -133,6 +139,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   toolRegistry.register(new ReplaceInFileTool());
   toolRegistry.register(new ReplaceFileContentTool());
   toolRegistry.register(new MultiReplaceFileContentTool());
+  toolRegistry.register(new ManageSkillConfigTool(store));
   toolRegistry.register(new GetDiagnosticsTool());
   toolRegistry.register(new ApplyWorkspaceEditTool());
   toolRegistry.register(new SemanticSearchTool(vectorIndex));
