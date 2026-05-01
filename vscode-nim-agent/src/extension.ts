@@ -19,7 +19,9 @@ import { ReplaceFileContentTool } from "./core/tools/ReplaceFileContentTool";
 import { GetDiagnosticsTool } from "./core/tools/GetDiagnosticsTool";
 import { ApplyWorkspaceEditTool } from "./core/tools/ApplyWorkspaceEditTool";
 import { SemanticSearchTool } from "./core/tools/SemanticSearchTool";
+import { WebSearchTool } from "./core/tools/WebSearchTool";
 import { TestRunnerTool } from "./core/tools/TestRunnerTool";
+import { FrameworkScaffoldTool } from "./core/tools/FrameworkScaffoldTool";
 import { VectorIndexService } from "./core/context/VectorIndexService";
 import { ConversationMemory } from "./core/memory/ConversationMemory";
 import { LocalCache } from "./core/memory/LocalCache";
@@ -103,7 +105,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   toolRegistry.register(new GetDiagnosticsTool());
   toolRegistry.register(new ApplyWorkspaceEditTool());
   toolRegistry.register(new SemanticSearchTool(vectorIndex));
+  toolRegistry.register(new WebSearchTool());
   toolRegistry.register(new TestRunnerTool());
+  toolRegistry.register(new FrameworkScaffoldTool());
   toolRegistry.register(new HandOffTool());
   store.toolRegistry = toolRegistry;
 
