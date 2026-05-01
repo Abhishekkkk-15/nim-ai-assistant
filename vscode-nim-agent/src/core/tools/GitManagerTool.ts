@@ -46,10 +46,19 @@ export class GitManagerTool extends BaseTool {
       }
 
       if (action === "diff") {
-        let out = await this.runGit(["diff", "HEAD"], cwd);
+        const targetPath = input.path ? String(input.path) : undefined;
+        const args = ["diff", "HEAD"];
+        if (targetPath) args.push("--", targetPath);
+        let out = await this.runGit(args, cwd);
         if (!out.trim()) out = await this.runGit(["diff"], cwd);
         if (out.length > 50000) out = out.substring(0, 50000) + "\n...[Diff Truncated]";
         return { ok: true, output: out || "No diff available." };
+      }
+
+      if (action === "stage") {
+        const targetPath = input.path ? String(input.path) : ".";
+        const out = await this.runGit(["add", targetPath], cwd);
+        return { ok: true, output: out || `Staged ${targetPath}` };
       }
 
       if (action === "commit") {
@@ -62,6 +71,22 @@ export class GitManagerTool extends BaseTool {
         await this.runGit(["add", "."], cwd);
         const out = await this.runGit(["commit", "-m", formattedMessage], cwd);
         return { ok: true, output: `Successfully committed:\n${out}` };
+      }
+
+      if (action === "push") {
+        const out = await this.runGit(["push"], cwd);
+        return { ok: true, output: out || "Push completed." };
+      }
+
+      if (action === "pull") {
+        const out = await this.runGit(["pull"], cwd);
+        return { ok: true, output: out || "Pull completed." };
+      }
+
+      if (action === "log") {
+        const limit = Math.max(1, Number(input.limit || 10));
+        const out = await this.runGit(["log", `-${limit}`, "--oneline", "--decorate"], cwd);
+        return { ok: true, output: out || "No commits found." };
       }
 
       return { ok: false, output: `Unknown action: ${action}` };

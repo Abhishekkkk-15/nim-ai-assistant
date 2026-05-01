@@ -1,13 +1,28 @@
 import * as vscode from "vscode";
 import type { AgentContext } from "../../core/agent/BaseAgent";
+import type { VectorIndexService } from "../../core/context/VectorIndexService";
 
 const MAX_FILE_BYTES = 64_000;
+const KEY_CONFIG_PATTERNS = [
+  "package.json",
+  "tsconfig.json",
+  "tsconfig.*.json",
+  ".eslintrc",
+  ".eslintrc.*",
+  "vite.config.*",
+];
+const TREE_EXCLUDE = "**/{node_modules,dist,.git,.next,.cache,build,out,coverage}/**";
+const TREE_LIMIT = 300;
+const MAX_SEMANTIC_CHUNKS = 3;
 
 /**
  * Snapshot the user's active editor + selection + a tiny workspace summary.
  * Bounded so we never blow up the context window.
  */
-export async function collectEditorContext(extraFiles?: string[]): Promise<AgentContext> {
+export async function collectEditorContext(
+  extraFiles?: string[],
+  options?: { bootstrapProjectContext?: boolean; prompt?: string; vectorIndex?: VectorIndexService }
+): Promise<AgentContext> {
   const ctx: AgentContext = { extraFiles: [] };
 
   const editor = vscode.window.activeTextEditor;
@@ -67,6 +82,9 @@ export async function collectEditorContext(extraFiles?: string[]): Promise<Agent
   }
 
   ctx.workspaceSummary = await summarizeWorkspace();
+  if (options?.bootstrapProjectContext) {
+    ctx.projectContext = await collectProjectContext(options.prompt, options.vectorIndex);
+  }
   return ctx;
 }
 
@@ -102,6 +120,77 @@ async function summarizeWorkspace(): Promise<string | undefined> {
   ];
   for (const f of files.slice(0, 80)) {
     lines.push(`  - ${vscode.workspace.asRelativePath(f)}`);
+  }
+  return lines.join("\n");
+}
+
+async function collectProjectContext(
+  prompt: string | undefined,
+  vectorIndex: VectorIndexService | undefined
+): Promise<AgentContext["projectContext"]> {
+  const keyFiles = await collectKeyConfigFiles();
+  const tree = await collectDirectoryTreeTop2();
+  let semanticHints: Awaited<ReturnType<VectorIndexService["search"]>> = [];
+  try {
+    semanticHints =
+      vectorIndex && prompt
+        ? await vectorIndex.search(prompt, MAX_SEMANTIC_CHUNKS)
+        : [];
+  } catch {
+    semanticHints = [];
+  }
+  const semanticPreview = semanticHints.map((hint) => ({
+    path: hint.path,
+    startLine: hint.startLine,
+    endLine: hint.endLine,
+    score: hint.score,
+    chunk: hint.chunk.slice(0, 1800),
+  }));
+  return { keyFiles, topLevelTree: tree, semanticHints: semanticPreview };
+}
+
+async function collectKeyConfigFiles(): Promise<Array<{ path: string; content: string }>> {
+  const out: Array<{ path: string; content: string }> = [];
+  for (const pattern of KEY_CONFIG_PATTERNS) {
+    const uris = await vscode.workspace.findFiles(pattern, TREE_EXCLUDE, 3);
+    for (const uri of uris) {
+      const relPath = vscode.workspace.asRelativePath(uri);
+      if (out.some((entry) => entry.path === relPath)) continue;
+      try {
+        const content = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString("utf8");
+        out.push({
+          path: relPath,
+          content: content.length > 8000 ? `${content.slice(0, 8000)}\n[...truncated]` : content,
+        });
+      } catch {
+        // ignore file read issues
+      }
+    }
+  }
+  return out;
+}
+
+async function collectDirectoryTreeTop2(): Promise<string> {
+  const folders = vscode.workspace.workspaceFolders;
+  if (!folders || folders.length === 0) return "(no workspace)";
+  const root = folders[0];
+  const uris = await vscode.workspace.findFiles("**/*", TREE_EXCLUDE, TREE_LIMIT);
+  const tree = new Map<string, Set<string>>();
+  for (const uri of uris) {
+    const rel = vscode.workspace.asRelativePath(uri, false).replace(/\\/g, "/");
+    const parts = rel.split("/");
+    if (parts.length === 0) continue;
+    const top = parts[0];
+    if (!tree.has(top)) tree.set(top, new Set());
+    if (parts.length > 1) {
+      tree.get(top)!.add(parts[1]);
+    }
+  }
+  const lines: string[] = [`Workspace root: ${root.name}`];
+  for (const [top, children] of [...tree.entries()].sort(([a], [b]) => a.localeCompare(b)).slice(0, 60)) {
+    lines.push(`- ${top}`);
+    const childList = [...children].sort((a, b) => a.localeCompare(b)).slice(0, 20);
+    if (childList.length > 0) lines.push(`  - ${childList.join(", ")}`);
   }
   return lines.join("\n");
 }

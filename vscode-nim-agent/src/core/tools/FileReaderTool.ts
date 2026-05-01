@@ -8,7 +8,7 @@ export class FileReaderTool extends BaseTool {
     return {
       name: "read_file",
       description:
-        "Read the contents of a file in the workspace. Path can be absolute or relative to the workspace root.",
+        "Read file contents in full or by explicit line range. Path can be absolute or relative to workspace root.",
       input: {
         type: "object",
         properties: {

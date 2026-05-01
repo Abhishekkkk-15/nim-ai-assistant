@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import * as path from "path";
+import * as fs from "fs";
 import type { ChatMessage, MessageContentPart } from "../../api/BaseProvider";
 import type { ExtensionContextStore } from "../../utils/context";
 import type { ToolResult } from "../tools/BaseTool";
@@ -44,6 +45,11 @@ export interface AgentContext {
   workspaceSummary?: string;
   diagnostics?: string;
   extraFiles?: { path: string; content: string }[];
+  projectContext?: {
+    keyFiles: { path: string; content: string }[];
+    topLevelTree: string;
+    semanticHints: { path: string; startLine: number; endLine: number; score: number; chunk: string }[];
+  };
 }
 
 interface ParsedAction {
@@ -95,6 +101,9 @@ export abstract class BaseAgent {
     const temperature = config.get<number>("temperature", 0.4);
     const maxTokens = config.get<number>("maxTokens", 2048);
     const cacheEnabled = config.get<boolean>("cacheEnabled", true);
+    const retryOnToolFailure = config.get<boolean>("retryOnToolFailure", true);
+    const toolRetryBudget = config.get<number>("toolRetryBudget", 2);
+    const verifyAfterEdit = config.get<boolean>("verifyAfterEdit", true);
 
     const steps: AgentStep[] = [];
     const messages: ChatMessage[] = [];
@@ -204,7 +213,11 @@ export abstract class BaseAgent {
             steps.push(toolCallStep);
             input.onStep?.(toolCallStep);
             
-            const result = await this.store.toolRegistry.execute(toolName, toolInput);
+            const result = await this.executeToolWithRetry(
+              toolName,
+              toolInput,
+              retryOnToolFailure ? toolRetryBudget : 0
+            );
             return { toolName, result };
           }
           return null;
@@ -221,6 +234,23 @@ export abstract class BaseAgent {
           if (res.result.terminal) {
              finalContent = res.result.output;
              return { content: finalContent, steps, usage: { promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens, totalTokens: totalPromptTokens + totalCompletionTokens } };
+          }
+
+          if (verifyAfterEdit && res.result.ok && this.isWriteTool(res.toolName)) {
+            const verificationResults = await this.runVerificationPipeline();
+            for (const verification of verificationResults) {
+              const verifyStep: AgentStep = {
+                type: "tool_result",
+                name: verification.name,
+                payload: verification.result.output,
+              };
+              steps.push(verifyStep);
+              input.onStep?.(verifyStep);
+              messages.push({
+                role: "user",
+                content: this.toolResultPrompt(verification.name, verification.result),
+              });
+            }
           }
         }
 
@@ -399,7 +429,110 @@ ${ctxBlock}`;
         parts.push(`File: ${f.path}\n\`\`\`\n${f.content}\n\`\`\``);
       }
     }
+    if (ctx.projectContext) {
+      parts.push("Project context bootstrap:");
+      if (ctx.projectContext.keyFiles.length > 0) {
+        parts.push("Key config files:");
+        for (const file of ctx.projectContext.keyFiles) {
+          parts.push(`- ${file.path}\n\`\`\`\n${this.truncate(file.content, 2500)}\n\`\`\``);
+        }
+      }
+      parts.push(`Directory tree (top levels):\n${ctx.projectContext.topLevelTree}`);
+      if (ctx.projectContext.semanticHints.length > 0) {
+        parts.push("Semantic hints:");
+        for (const hint of ctx.projectContext.semanticHints) {
+          parts.push(
+            `- ${hint.path}:${hint.startLine}-${hint.endLine} (score=${hint.score.toFixed(3)})\n\`\`\`\n${this.truncate(
+              hint.chunk,
+              1600
+            )}\n\`\`\``
+          );
+        }
+      }
+    }
     return parts.length ? parts.join("\n\n") : "(no editor context provided)";
+  }
+
+  private async executeToolWithRetry(
+    toolName: string,
+    toolInput: Record<string, unknown>,
+    retryBudget: number
+  ): Promise<ToolResult> {
+    let lastResult = await this.store.toolRegistry.execute(toolName, toolInput);
+    if (lastResult.ok || retryBudget <= 0) return lastResult;
+
+    for (let attempt = 1; attempt <= retryBudget; attempt++) {
+      if (this.isReadbackHelpfulTool(toolName)) {
+        const target = this.extractToolPath(toolInput);
+        if (target) {
+          const readResult = await this.store.toolRegistry.execute("read_file", { path: target });
+          if (readResult.ok) {
+            this.store.logger.debug(`Retry context read for ${toolName} on ${target}`);
+          }
+        }
+      }
+      const next = await this.store.toolRegistry.execute(toolName, toolInput);
+      if (next.ok) {
+        return {
+          ok: true,
+          output: `${next.output}\n[retryOnToolFailure] Succeeded after retry attempt ${attempt}.`,
+        };
+      }
+      lastResult = next;
+    }
+    return {
+      ok: false,
+      output: `${lastResult.output}\n[retryOnToolFailure] Failed after ${retryBudget} retries.`,
+    };
+  }
+
+  private isReadbackHelpfulTool(toolName: string): boolean {
+    return (
+      toolName === "replace_file_content" ||
+      toolName === "replace_in_file" ||
+      toolName === "multi_replace_file_content"
+    );
+  }
+
+  private extractToolPath(toolInput: Record<string, unknown>): string | undefined {
+    const candidate = toolInput.path || toolInput.filePath || toolInput.target;
+    return typeof candidate === "string" ? candidate : undefined;
+  }
+
+  private isWriteTool(toolName: string): boolean {
+    return ["write_file", "replace_file_content", "replace_in_file", "multi_replace_file_content", "apply_workspace_edit"].includes(toolName);
+  }
+
+  private async runVerificationPipeline(): Promise<Array<{ name: string; result: ToolResult }>> {
+    const outputs: Array<{ name: string; result: ToolResult }> = [];
+    const typecheckCommand = this.resolveTypecheckCommand();
+    const typecheckResult = await this.store.toolRegistry.execute("run_command", { command: typecheckCommand });
+    outputs.push({ name: "verify_typecheck", result: typecheckResult });
+    if (!typecheckResult.ok) {
+      return outputs;
+    }
+
+    const testsResult = await this.store.toolRegistry.execute("run_tests", {});
+    outputs.push({ name: "verify_tests", result: testsResult });
+    if (!testsResult.ok) {
+      const diagResult = await this.store.toolRegistry.execute("get_diagnostics", { minSeverity: "error" });
+      outputs.push({ name: "verify_diagnostics", result: diagResult });
+    }
+    return outputs;
+  }
+
+  private resolveTypecheckCommand(): string {
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!root) return "tsc --noEmit";
+    const packagePath = path.join(root, "package.json");
+    if (!fs.existsSync(packagePath)) return "tsc --noEmit";
+    try {
+      const pkg = JSON.parse(fs.readFileSync(packagePath, "utf8"));
+      if (pkg?.scripts?.typecheck) return "npm run typecheck";
+    } catch {
+      // ignore invalid package.json
+    }
+    return "tsc --noEmit";
   }
 
   /**

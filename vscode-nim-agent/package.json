@@ -266,6 +266,23 @@
           "default": true,
           "description": "Enable simple in-memory response cache."
         },
+        "nimAgent.verifyAfterEdit": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically run typecheck and tests after write/edit tools."
+        },
+        "nimAgent.retryOnToolFailure": {
+          "type": "boolean",
+          "default": true,
+          "description": "Retry failed tool executions using bounded self-correction."
+        },
+        "nimAgent.toolRetryBudget": {
+          "type": "number",
+          "default": 2,
+          "minimum": 0,
+          "maximum": 5,
+          "description": "Maximum retries per tool call when retryOnToolFailure is enabled."
+        },
         "nimAgent.providers": {
           "type": "array",
           "default": [

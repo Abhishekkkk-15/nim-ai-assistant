@@ -22,6 +22,7 @@ export class ApplyWorkspaceEditTool extends BaseTool {
       name: "apply_workspace_edit",
       description: "Apply multiple edits across one or more files in the workspace. Use this for refactoring or multi-file changes. Supports both coordinate-based and search-replace-based edits.",
       input: {
+        // Multi-file edit schema
         type: "object",
         properties: {
           edits: {

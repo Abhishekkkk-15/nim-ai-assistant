@@ -59,7 +59,7 @@ INSTRUCTIONS:
               ],
               temperature: 0.2
             },
-            { signal: tokenToSignal(token) }
+            tokenToSignal(token)
           );
 
           if (token.isCancellationRequested) {

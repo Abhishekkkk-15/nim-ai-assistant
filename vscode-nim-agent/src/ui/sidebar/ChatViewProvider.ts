@@ -347,10 +347,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       this.currentAbort = new AbortController();
 
       try {
+        const currentSession = this.store.historyManager
+          .getSessions()
+          .find((s) => s.id === this.store.historyManager.getCurrentSessionId());
+        const isFirstMessageInSession = !!currentSession && currentSession.messages.length <= 1;
+        const baseContext = await collectEditorContext(Array.from(this.attachedFiles), {
+          bootstrapProjectContext: isFirstMessageInSession,
+          prompt: currentPrompt,
+          vectorIndex: this.store.vectorIndex,
+        });
+
         const result = await agent.run({
           prompt: currentPrompt,
           images: currentImages,
-          context: await collectEditorContext(Array.from(this.attachedFiles)),
+          context: baseContext,
           planMode: this.planMode,
           signal: this.currentAbort.signal,
           onToken: t => this.post({ type: "assistant_token", payload: t }),
@@ -380,7 +390,11 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             // For parallel runs, we swallow tokens to keep the UI clean, but log the result
             const res = await agent.run({
               prompt: item.followUp,
-              context: await collectEditorContext(Array.from(this.attachedFiles)),
+              context: await collectEditorContext(Array.from(this.attachedFiles), {
+                bootstrapProjectContext: false,
+                prompt: item.followUp,
+                vectorIndex: this.store.vectorIndex,
+              }),
               planMode: false, // Parallel tasks usually execute directly
               signal: this.currentAbort?.signal,
               onStep: s => this.handleAgentStep(s),

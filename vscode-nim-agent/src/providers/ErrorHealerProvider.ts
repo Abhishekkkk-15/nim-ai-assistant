@@ -63,7 +63,8 @@ export function registerErrorHealer(context: vscode.ExtensionContext, store: Ext
         },
         async (progress, token) => {
           try {
-            const agent = store.agentManager.getActive();
+            const agent = store.agentRegistry.get("coder");
+            if (!agent) throw new Error("Coder agent not found");
             const fileName = path.basename(document.fileName);
 
             const result = await agent.run({

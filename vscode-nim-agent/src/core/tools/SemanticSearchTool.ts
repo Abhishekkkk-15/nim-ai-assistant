@@ -27,12 +27,25 @@ export class SemanticSearchTool extends BaseTool {
     const limit = input.limit ? Number(input.limit) : 5;
 
     try {
+      const status = this.vectorIndex.status();
+      if (status.isIndexing && !status.isReady) {
+        return {
+          ok: true,
+          output: "Semantic index is warming up. Try again shortly, or use search_workspace for keyword search."
+        };
+      }
+
       const results = await this.vectorIndex.search(query, limit);
       if (results.length === 0) {
         return { ok: true, output: "No semantically relevant code found. Try a different query or use 'search_workspace' for keywords." };
       }
 
-      const output = results.map(r => `File: ${r.path} (Score: ${r.score.toFixed(3)})\n\`\`\`\n${r.chunk}\n\`\`\``).join("\n\n---\n\n");
+      const output = results
+        .map(
+          (r) =>
+            `File: ${r.path}:${r.startLine}-${r.endLine} (Score: ${r.score.toFixed(3)})\n\`\`\`\n${r.chunk}\n\`\`\``
+        )
+        .join("\n\n---\n\n");
       return { ok: true, output };
     } catch (err) {
       return { ok: false, output: `Semantic search failed: ${(err as Error).message}` };

@@ -14,7 +14,7 @@ export class TestRunnerTool extends BaseTool {
         properties: {
           testFile: { type: "string", description: "Optional specific test file to run." },
           testPattern: { type: "string", description: "Optional pattern/grep to filter tests." },
-          runner: { type: "string", enum: ["npm", "jest", "mocha", "pytest", "vitest"], description: "Force a specific test runner." }
+          runner: { type: "string", enum: ["npm", "jest", "mocha", "pytest", "vitest", "go", "cargo"], description: "Force a specific test runner." }
         }
       },
       requiresPermission: true
@@ -41,6 +41,15 @@ export class TestRunnerTool extends BaseTool {
       command = `npx vitest run ${input.testFile || ""}`;
     } else if (runner === "pytest") {
       command = `pytest ${input.testFile || ""}`;
+    } else if (runner === "mocha") {
+      command = `npx mocha ${input.testFile || ""}`;
+      if (input.testPattern) command += ` --grep "${input.testPattern}"`;
+    } else if (runner === "go") {
+      command = `go test ./...`;
+      if (input.testFile) command = `go test ${input.testFile}`;
+    } else if (runner === "cargo") {
+      command = `cargo test`;
+      if (input.testFile) command += ` --test ${input.testFile}`;
     } else {
       return { ok: false, output: "Could not automatically detect a test runner. Please specify 'runner' or 'command' in 'run_command' instead." };
     }
@@ -49,13 +58,7 @@ export class TestRunnerTool extends BaseTool {
       cp.exec(command, { cwd: rootPath }, (error, stdout, stderr) => {
         const output = stdout + stderr;
         const ok = !error;
-        
-        // Basic parsing for summary
-        let summary = "";
-        if (output.includes("Tests:")) {
-          const lines = output.split("\n");
-          summary = lines.find(l => l.includes("Tests:")) || "";
-        }
+        const summary = this.extractSummary(output);
 
         resolve({ 
           ok, 
@@ -73,9 +76,34 @@ export class TestRunnerTool extends BaseTool {
         if (pkg.scripts?.test) return "npm";
         if (pkg.devDependencies?.jest || pkg.dependencies?.jest) return "jest";
         if (pkg.devDependencies?.vitest || pkg.dependencies?.vitest) return "vitest";
+        if (pkg.devDependencies?.mocha || pkg.dependencies?.mocha) return "mocha";
       } catch { /* ignore */ }
     }
     if (fs.existsSync(path.join(root, "pytest.ini")) || fs.existsSync(path.join(root, "conftest.py"))) return "pytest";
+    if (fs.existsSync(path.join(root, "go.mod"))) return "go";
+    if (fs.existsSync(path.join(root, "Cargo.toml"))) return "cargo";
     return undefined;
+  }
+
+  private extractSummary(output: string): string {
+    const lines = output.split("\n");
+    const patterns = [
+      /Tests?:/i, 
+      /test files/i, 
+      /passing/i, 
+      /failing/i, 
+      /failed/i, 
+      /passed/i,
+      /ok\s+[\w\.\/]+\s+\d+\.\d+s/i, // Go test summary
+      /test result: (ok|failed)/i // Cargo test summary
+    ];
+    const found: string[] = [];
+    for (const line of lines) {
+      if (patterns.some((pattern) => pattern.test(line))) {
+        found.push(line.trim());
+      }
+      if (found.length >= 6) break;
+    }
+    return found.join(" | ");
   }
 }
