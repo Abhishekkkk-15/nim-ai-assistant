@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
-import type { ExtensionContextStore } from "../utils/context";
+import { ExtensionContextStore } from "../utils/context";
+import { tokenToSignal } from "../utils/signal";
 
 export class ErrorHealerProvider implements vscode.CodeActionProvider {
   public static readonly providedCodeActionKinds = [vscode.CodeActionKind.QuickFix];
@@ -62,31 +63,27 @@ export function registerErrorHealer(context: vscode.ExtensionContext, store: Ext
         },
         async (progress, token) => {
           try {
-            const provider = store.providerRegistry.active();
-            const model = store.modelManager.getActive();
+            const agent = store.agentManager.getActive();
+            const fileName = path.basename(document.fileName);
 
-            const systemPrompt = `You are an expert compiler and syntax error healer. 
+            const result = await agent.run({
+              prompt: `You are an expert compiler and syntax error healer. 
 The user has an error in their code: "${diagnostic.message}"
 
 Language: ${document.languageId}
-File: ${path.basename(document.fileName)}
+File: ${fileName}
 
 INSTRUCTIONS:
 1. Fix the error in the provided code block.
 2. Return ONLY the final, complete replacement code block that should substitute the original.
-3. DO NOT include markdown formatting (\`\`\`). DO NOT include explanations.`;
+3. DO NOT include markdown formatting (\`\`\`). DO NOT include explanations.
 
-            const result = await provider.chatComplete(
-              {
-                model,
-                messages: [
-                  { role: "system", content: systemPrompt },
-                  { role: "user", content: `Code to fix:\n\n${textToEdit}\n\nError: ${diagnostic.message}` }
-                ],
-                temperature: 0.1
-              },
-              token
-            );
+Code to fix:
+${textToEdit}
+
+Error: ${diagnostic.message}`,
+              signal: tokenToSignal(token)
+            });
 
             if (token.isCancellationRequested) return;
 

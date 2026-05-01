@@ -1,5 +1,7 @@
 import * as vscode from "vscode";
 import * as path from "path";
+import { Logger } from "../utils/logger";
+import { tokenToSignal } from "../utils/signal";
 import type { ExtensionContextStore } from "../utils/context";
 
 export function registerInlineEditCommand(context: vscode.ExtensionContext, store: ExtensionContextStore) {
@@ -57,7 +59,7 @@ INSTRUCTIONS:
               ],
               temperature: 0.2
             },
-            token
+            { signal: tokenToSignal(token) }
           );
 
           if (token.isCancellationRequested) {

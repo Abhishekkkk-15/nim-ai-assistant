@@ -10,11 +10,9 @@ export class GitManagerTool extends BaseTool {
       input: {
         type: "object",
         properties: {
-          action: {
-            type: "string",
-            enum: ["status", "diff", "commit"],
-            description: "Git action to perform."
-          },
+          action: { type: "string", description: "Git action: status, stage, commit, diff, push, pull, log." } as any,
+          message: { type: "string", description: "Commit message (required for 'commit')." } as any,
+          path: { type: "string", description: "Optional path for status, diff, or stage." } as any,
           commitType: {
             type: "string",
             enum: ["feat", "fix", "chore", "docs", "style", "refactor", "perf", "test"],

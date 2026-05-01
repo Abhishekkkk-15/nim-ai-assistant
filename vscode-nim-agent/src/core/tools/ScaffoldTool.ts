@@ -22,7 +22,8 @@ export class ScaffoldTool extends BaseTool {
               },
               required: ["path", "content"]
             }
-          }
+          } as any,
+          rootDir: { type: "string", description: "Optional root directory." } as any
         },
         required: ["files"]
       },

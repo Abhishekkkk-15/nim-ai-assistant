@@ -10,15 +10,9 @@ export class CodeIntelligenceTool extends BaseTool {
       input: {
         type: "object",
         properties: {
-          action: {
-            type: "string",
-            enum: ["workspace_symbol", "find_references"],
-            description: "The action to perform."
-          },
-          query: {
-            type: "string",
-            description: "For workspace_symbol, provide the name of the function or class. For find_references, provide the absolute path and exact line/character coordinates (not supported yet, use WorkspaceSearchTool for now)."
-          }
+          action: { type: "string", description: "The action to perform: list_files, get_definitions, get_references, search_symbol." } as any,
+          path: { type: "string", description: "Optional file path." } as any,
+          query: { type: "string", description: "Optional query string." } as any
         },
         required: ["action", "query"]
       },

@@ -402,22 +402,50 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   
   .body { white-space: pre-wrap; word-break: break-word; font-size: 13px; line-height: 1.6; }
   
-  .step {
-    font-size: 11px;
-    margin: 4px 0;
-    padding: 8px 12px;
+  .steps-container { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; }
+  .steps-container:empty { display: none; }
+  .step-group {
     border-radius: var(--radius);
-    background: var(--bg-darker);
-    border-left: 4px solid var(--accent);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    animation: slideIn 0.3s ease-out;
+    background: var(--vscode-sideBar-background);
+    overflow: hidden;
+    animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border: 1px solid var(--vscode-panel-border);
+    transition: all 0.2s;
   }
-  @keyframes slideIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
-  .step.thought { border-left-color: var(--vscode-charts-purple, #b267e6); font-style: italic; opacity: 0.9; }
-  .step.tool_call { border-left-color: var(--vscode-charts-blue, #3794ff); font-weight: 600; }
-  .step.tool_result { border-left-color: var(--vscode-charts-orange, #d18616); }
+  .step-group:hover { border-color: var(--vscode-focusBorder); background: var(--bg-darker); }
+  @keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+  .step-header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px; cursor: pointer;
+    font-size: 12px; font-weight: 500;
+    user-select: none; transition: background 0.2s;
+  }
+  .step-header:hover { background: rgba(255,255,255,0.05); }
+  .step-icon { font-size: 14px; flex-shrink: 0; width: 20px; text-align: center; }
+  .step-title { flex: 1; opacity: 0.9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--vscode-foreground); }
+  .step-status { font-size: 10px; opacity: 0.6; flex-shrink: 0; font-family: var(--vscode-editor-font-family); margin-right: 4px; }
+  .step-chevron { font-size: 10px; transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); opacity: 0.4; flex-shrink: 0; }
+  .step-group.expanded { border-color: var(--vscode-focusBorder); box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+  .step-group.expanded .step-chevron { transform: rotate(90deg); opacity: 0.8; }
+  .step-body {
+    display: none; padding: 0 12px 10px 42px;
+    font-size: 12px; opacity: 0.85; line-height: 1.6;
+    border-top: 1px solid rgba(255,255,255,0.03);
+  }
+  .step-group.expanded .step-body { display: block; }
+  .step-body pre { 
+    margin: 8px 0; padding: 12px; font-size: 11px; 
+    max-height: 250px; overflow-y: auto; 
+    white-space: pre-wrap; word-break: break-all;
+    background: #00000044; border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 4px; font-family: var(--vscode-editor-font-family);
+  }
+  .step-group.thought { border-left: 3px solid var(--vscode-charts-purple, #b267e6); }
+  .step-group.tool { border-left: 3px solid var(--vscode-charts-blue, #3794ff); }
+  .step-group.complete { border-left-color: var(--vscode-charts-green, #4ec9b0); }
+  .step-group.failed { border-left-color: var(--vscode-errorForeground, #f44747); }
+  .step-spinner { width: 14px; height: 14px; border: 2px solid rgba(255,255,255,0.1); border-top-color: var(--vscode-charts-blue, #3794ff); border-radius: 50%; animation: spin 1s linear infinite; flex-shrink: 0; }
+  @keyframes spin { to { transform: rotate(360deg); } }
 
   .composer {
     display: flex;
@@ -622,6 +650,8 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   const contextBar = document.getElementById('contextBar');
 
   let activeAssistantBubble = null;
+  let activeStepsContainer = null;
+  let lastStepGroup = null;
   let currentPermissionRequest = null;
 
   function append(role, text) {
@@ -635,6 +665,10 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
 
     const bubble = document.createElement('div');
     bubble.className = 'bubble';
+
+    const sc = document.createElement('div');
+    sc.className = 'steps-container';
+    bubble.appendChild(sc);
     
     const body = document.createElement('div');
     body.className = 'body';
@@ -644,7 +678,7 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     
     log.appendChild(msg);
     log.scrollTop = log.scrollHeight;
-    return body;
+    return { body, stepsContainer: sc };
   }
 
   function formatMarkdown(text) {
@@ -659,39 +693,88 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       .replace(/\\n/g, '<br>');
   }
 
+  function getToolIcon(name) {
+    const icons = { read_file:'📄', write_file:'✏️', run_command:'⚡', replace_file_content:'🔧', replace_in_file:'🔧', search_workspace:'🔍', propose_edit:'✨', scaffold_project:'📦', fetch_url:'🌐', code_intelligence:'🧠', git_manager:'📋' };
+    return icons[name] || '🔧';
+  }
+  function getToolTitle(name, payload) {
+    try {
+      const p = JSON.parse(payload);
+      if (name === 'read_file') return 'Read: ' + (p.path || '');
+      if (name === 'write_file') return 'Write: ' + (p.path || '');
+      if (name === 'run_command') return 'Run: ' + (p.command || '');
+      if (name === 'replace_file_content') return 'Edit: ' + (p.path || '');
+      if (name === 'replace_in_file') return 'Replace in: ' + (p.path || '');
+      if (name === 'search_workspace') return 'Search: ' + (p.query || '');
+      if (name === 'propose_edit') return 'Propose edit: ' + (p.path || '');
+      if (name === 'scaffold_project') return 'Scaffold project';
+      if (name === 'fetch_url') return 'Fetch: ' + (p.url || '');
+      if (name === 'code_intelligence') return 'Analyze: ' + (p.action || '');
+      if (name === 'git_manager') return 'Git: ' + (p.action || '');
+    } catch {}
+    return name || 'tool';
+  }
+
   function appendStep(step) {
-    const div = document.createElement('div');
-    div.className = 'step ' + step.type;
-    
-    let content = step.payload;
-    if (step.type === 'tool_call') {
-      try {
-        const payload = JSON.parse(step.payload);
-        if (step.name === 'write_file') {
-          content = 'Writing file: ' + payload.path;
-        } else if (step.name === 'run_command') {
-          content = 'Running command: ' + payload.command;
-        } else if (step.name === 'propose_edit') {
-          content = 'Proposing edit to: ' + payload.path;
-        } else if (step.name === 'read_file') {
-          content = 'Reading file: ' + payload.path;
-        } else if (step.name === 'search_workspace') {
-          content = 'Searching workspace: ' + payload.query;
-        } else {
-          content = 'Calling tool: ' + step.name;
-        }
-      } catch {
-        content = 'Calling tool: ' + step.name;
-      }
-    } else if (step.type === 'tool_result') {
-      content = 'Tool ' + (step.name || '') + ' finished.';
-    } else if (step.type === 'thought') {
-      // Thought is already plain text or slightly structured
+    const container = activeStepsContainer || log;
+
+    if (step.type === 'thought') {
+      const g = document.createElement('div');
+      g.className = 'step-group thought expanded';
+      g.innerHTML = '<div class="step-header"><span class="step-icon">💭</span><span class="step-title">Thought</span><span class="step-chevron">▸</span></div>';
+      const body = document.createElement('div');
+      body.className = 'step-body';
+      body.textContent = step.payload;
+      g.appendChild(body);
+      g.querySelector('.step-header').onclick = () => g.classList.toggle('expanded');
+      container.appendChild(g);
+      lastStepGroup = null;
+      log.scrollTop = log.scrollHeight;
+      return;
     }
-    
-    div.textContent = content;
-    log.appendChild(div);
-    log.scrollTop = log.scrollHeight;
+
+    if (step.type === 'tool_call') {
+      const g = document.createElement('div');
+      g.className = 'step-group tool expanded';
+      const icon = getToolIcon(step.name);
+      const title = getToolTitle(step.name, step.payload);
+      g.innerHTML = '<div class="step-header"><span class="step-icon">' + icon + '</span><span class="step-title">' + title + '</span><div class="step-spinner"></div><span class="step-chevron">▸</span></div>';
+      const body = document.createElement('div');
+      body.className = 'step-body';
+      g.appendChild(body);
+      g.querySelector('.step-header').onclick = () => g.classList.toggle('expanded');
+      container.appendChild(g);
+      lastStepGroup = g;
+      log.scrollTop = log.scrollHeight;
+      return;
+    }
+
+    if (step.type === 'tool_result' && lastStepGroup) {
+      const spinner = lastStepGroup.querySelector('.step-spinner');
+      if (spinner) spinner.remove();
+      const ok = step.payload && !step.payload.startsWith('Command failed') && !step.payload.startsWith('Tool denied');
+      lastStepGroup.classList.add(ok ? 'complete' : 'failed');
+      const statusEl = document.createElement('span');
+      statusEl.className = 'step-status';
+      statusEl.textContent = ok ? '✓ done' : '✗ failed';
+      lastStepGroup.querySelector('.step-header').insertBefore(statusEl, lastStepGroup.querySelector('.step-chevron'));
+      const body = lastStepGroup.querySelector('.step-body');
+      if (step.payload) {
+        const isCmd = lastStepGroup.querySelector('.step-icon')?.textContent === '⚡';
+        if (isCmd) {
+          const pre = document.createElement('pre');
+          pre.textContent = step.payload;
+          body.appendChild(pre);
+        } else {
+          const txt = document.createElement('div');
+          txt.textContent = step.payload.length > 500 ? step.payload.slice(0, 500) + '...' : step.payload;
+          body.appendChild(txt);
+        }
+      }
+      lastStepGroup = null;
+      log.scrollTop = log.scrollHeight;
+      return;
+    }
   }
 
   function send() {
@@ -807,20 +890,30 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         }
         break;
       }
-      case 'user':
-        const userBubble = append('user', '');
-        userBubble.innerHTML = formatMarkdown(m.payload);
+      case 'user': {
+        const { body: ub } = append('user', '');
+        ub.innerHTML = formatMarkdown(m.payload);
         activeAssistantBubble = null;
+        activeStepsContainer = null;
+        lastStepGroup = null;
         break;
-      case 'assistant_start':
-        activeAssistantBubble = append('assistant', '');
+      }
+      case 'assistant_start': {
+        const { body, stepsContainer } = append('assistant', '');
+        activeAssistantBubble = body;
+        activeStepsContainer = stepsContainer;
+        lastStepGroup = null;
         cancelBtn.style.display = 'inline-block';
         working.style.display = 'flex';
         break;
+      }
       case 'assistant_token':
-        if (!activeAssistantBubble) activeAssistantBubble = append('assistant', '');
+        if (!activeAssistantBubble) {
+          const { body, stepsContainer } = append('assistant', '');
+          activeAssistantBubble = body;
+          activeStepsContainer = stepsContainer;
+        }
         activeAssistantBubble.textContent += m.payload;
-        // Don't format yet, it breaks streaming
         log.scrollTop = log.scrollHeight;
         break;
       case 'assistant_end':
@@ -837,11 +930,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           }
         }
         activeAssistantBubble = null;
+        activeStepsContainer = null;
+        lastStepGroup = null;
         cancelBtn.style.display = 'none';
         working.style.display = 'none';
         break;
       case 'step': {
-        // When a tool_call step arrives, clear the raw JSON from the streaming bubble
         if (m.payload.type === 'tool_call' && activeAssistantBubble) {
           activeAssistantBubble.textContent = '';
         }
