@@ -446,6 +446,287 @@ const DesignerView = (function () {
 })();
 
 /* ============================================================
+   BuilderView — Smart Feature Builder overlay
+   ============================================================ */
+const BuilderView = (function () {
+  let lastFiles = [];
+  let lastResult = null;
+  let activeMode = 'auto';
+  const stepEls = new Map();
+
+  function open() {
+    Overlay.open('builderOverlay');
+    showSection('form');
+    resetProgress();
+  }
+
+  function showSection(which) {
+    $('#builderForm').style.display     = which === 'form'     ? '' : 'none';
+    $('#builderProgress').style.display = which === 'progress' ? '' : 'none';
+    $('#builderError').style.display    = which === 'error'    ? '' : 'none';
+    $('#builderResult').style.display   = which === 'result'   ? '' : 'none';
+  }
+
+  function resetProgress() {
+    stepEls.clear();
+    $('#builderStepsList').innerHTML = '';
+    $('#builderScopeCard').style.display = 'none';
+    $('#builderPlanBlock').style.display = 'none';
+    $('#builderArchBlock').style.display = 'none';
+    $('#builderReviewBlock').style.display = 'none';
+    $('#builderStatusText').textContent = 'Starting\u2026';
+    lastFiles = [];
+    lastResult = null;
+  }
+
+  function start(prompt, mode) {
+    activeMode = mode;
+    showSection('progress');
+    resetProgress();
+    $('#builderStatusText').textContent = mode === 'auto'
+      ? 'Analyzing scope\u2026'
+      : 'Running ' + modeLabel(mode) + '\u2026';
+  }
+
+  function modeLabel(mode) {
+    if (mode === 'quick') return 'Quick Fix';
+    if (mode === 'build') return 'Build Feature';
+    if (mode === 'plan')  return 'Plan First';
+    return 'Auto';
+  }
+
+  function setError(msg) {
+    showSection('error');
+    $('#builderError').textContent = 'Smart Builder failed: ' + (msg || 'unknown error');
+  }
+
+  function onScope(scope) {
+    const card = $('#builderScopeCard');
+    card.style.display = '';
+    card.innerHTML =
+      '<div class="builder-scope-row">' +
+        '<span>Detected scope</span>' +
+        '<span class="builder-scope-pill ' + escapeHtml(scope.intent) + '">' + escapeHtml(String(scope.intent || '').toUpperCase()) + '</span>' +
+        '<span class="builder-scope-conf">confidence ' + Math.round((scope.confidence || 0) * 100) + '%</span>' +
+        '<span class="builder-scope-source">(' + escapeHtml(scope.source || 'analyzer') + ')</span>' +
+      '</div>' +
+      '<div class="builder-scope-reason">' + escapeHtml(scope.reason || '') + '</div>';
+    $('#builderStatusText').textContent = 'Scope: ' + String(scope.intent || '').toUpperCase();
+  }
+
+  function onStep(step) {
+    const id = step.id;
+    let row = stepEls.get(id);
+    if (!row) {
+      row = el('div', { class: 'builder-step-row' }, [
+        el('span', { class: 'builder-step-status pending' }),
+        el('span', { class: 'builder-step-label' }, [step.label || step.agent || id]),
+        el('span', { class: 'builder-step-detail' }),
+      ]);
+      $('#builderStepsList').appendChild(row);
+      stepEls.set(id, row);
+    }
+    const status = row.querySelector('.builder-step-status');
+    status.classList.remove('pending', 'running', 'done', 'failed', 'skipped');
+    status.classList.add(step.status || 'pending');
+    if (step.status === 'done')   { status.textContent = '\u2713'; }
+    else if (step.status === 'failed') { status.textContent = '\u2715'; }
+    else if (step.status === 'running') { status.textContent = ''; }
+    else { status.textContent = ''; }
+    if (step.detail) row.querySelector('.builder-step-detail').textContent = step.detail;
+    if (step.eventType === 'step_start') {
+      $('#builderStatusText').textContent = step.label || ('Running ' + (step.agent || ''));
+    }
+  }
+
+  function onPlan(plan) {
+    const block = $('#builderPlanBlock');
+    block.style.display = '';
+    let html = '<div class="builder-block-title">Plan</div><div class="builder-block-body">';
+    if (plan.summary) html += '<div>' + escapeHtml(plan.summary) + '</div>';
+    if (plan.steps && plan.steps.length) {
+      html += '<ol>';
+      for (const s of plan.steps) {
+        html += '<li><strong>' + escapeHtml(s.title || ('Step ' + s.id)) + '</strong>';
+        if (s.description) html += '<span class="bb-desc">' + escapeHtml(s.description) + '</span>';
+        html += '</li>';
+      }
+      html += '</ol>';
+    }
+    if (plan.risks && plan.risks.length) {
+      html += '<div style="margin-top:8px;"><em>Risks:</em><ul>';
+      for (const r of plan.risks) html += '<li>' + escapeHtml(r) + '</li>';
+      html += '</ul></div>';
+    }
+    html += '</div>';
+    block.innerHTML = html;
+  }
+
+  function onArchitecture(arch) {
+    const block = $('#builderArchBlock');
+    block.style.display = '';
+    let html = '<div class="builder-block-title">Architecture</div><div class="builder-block-body">';
+    if (arch.notes) html += '<div>' + escapeHtml(arch.notes) + '</div>';
+    if (arch.files && arch.files.length) {
+      html += '<ul>';
+      for (const f of arch.files) {
+        html += '<li><strong>' + escapeHtml(f.path) + '</strong> — ' + escapeHtml(f.purpose || '');
+        html += ' <span class="builder-file-tag ' + (f.kind || 'create') + '" style="margin-left:6px;">' + escapeHtml((f.kind || 'create').toUpperCase()) + '</span></li>';
+      }
+      html += '</ul>';
+    }
+    html += '</div>';
+    block.innerHTML = html;
+  }
+
+  function onReview(review) {
+    const block = $('#builderReviewBlock');
+    block.style.display = '';
+    let html = '<div class="builder-block-title">Review ' + (review.approved ? '\u2014 Approved \u2713' : '\u2014 Changes requested') + '</div><div class="builder-block-body">';
+    if (review.issues && review.issues.length) {
+      for (const i of review.issues) {
+        html += '<div class="builder-issue-row">' +
+          '<span class="builder-issue-sev ' + escapeHtml(i.severity) + '">' + escapeHtml(String(i.severity || '').toUpperCase()) + '</span>' +
+          '<div><span class="builder-issue-msg">' + escapeHtml(i.message) + '</span>';
+        if (i.path) html += ' <span class="builder-issue-path">' + escapeHtml(i.path) + '</span>';
+        html += '</div></div>';
+      }
+    } else {
+      html += '<div>No issues found.</div>';
+    }
+    if (review.suggestions && review.suggestions.length) {
+      html += '<div style="margin-top:8px;"><em>Suggestions:</em><ul>';
+      for (const s of review.suggestions) html += '<li>' + escapeHtml(s) + '</li>';
+      html += '</ul></div>';
+    }
+    html += '</div>';
+    block.innerHTML = html;
+  }
+
+  function onFiles(files) {
+    lastFiles = Array.isArray(files) ? files : [];
+  }
+
+  function onComplete(result) {
+    lastResult = result || {};
+    lastFiles = (result && result.files) || lastFiles;
+    showSection('result');
+    renderFilesList();
+    $('#builderResultTitle').textContent =
+      'Generated ' + lastFiles.length + ' file' + (lastFiles.length === 1 ? '' : 's') +
+      ' \u2014 model: ' + (result && result.modelUsed ? result.modelUsed : '?');
+  }
+
+  function renderFilesList() {
+    const root = $('#builderFilesList');
+    if (!lastFiles.length) {
+      root.innerHTML = '<div style="color: var(--text-muted); font-size: var(--sz-sm); padding: 12px;">No files were generated.</div>';
+      return;
+    }
+    let html = '';
+    for (let i = 0; i < lastFiles.length; i++) {
+      const f = lastFiles[i];
+      const diff = simpleDiff(f.originalContent || '', f.content || '');
+      html +=
+        '<div class="builder-file-card" data-idx="' + i + '">' +
+          '<div class="builder-file-head" data-action="builder-toggle-file">' +
+            '<span class="builder-file-tag ' + (f.kind || 'create') + '">' + escapeHtml(String(f.kind || 'create').toUpperCase()) + '</span>' +
+            '<span class="builder-file-path" title="' + escapeHtml(f.path) + '">' + escapeHtml(f.path) + '</span>' +
+            '<span class="builder-file-stats"><span class="add">+' + diff.added + '</span><span class="del">-' + diff.removed + '</span></span>' +
+            '<span class="builder-file-actions">' +
+              '<button class="code-action" data-action="builder-copy-file" data-idx="' + i + '">Copy</button>' +
+              '<button class="code-action primary" data-action="builder-apply-file" data-idx="' + i + '">Apply</button>' +
+            '</span>' +
+          '</div>' +
+          '<div class="builder-file-body"><pre>' + diff.html + '</pre></div>' +
+        '</div>';
+    }
+    root.innerHTML = html;
+  }
+
+  function simpleDiff(oldText, newText) {
+    if (!oldText) {
+      const lines = String(newText || '').split('\\n');
+      const html = lines.map(l => '<span class="diff-add">+ ' + escapeHtml(l) + '</span>').join('\\n');
+      return { added: lines.length, removed: 0, html };
+    }
+    const oldLines = String(oldText).split('\\n');
+    const newLines = String(newText || '').split('\\n');
+    const oldSet = new Set(oldLines);
+    const newSet = new Set(newLines);
+    let added = 0, removed = 0;
+    const out = [];
+    const max = Math.max(oldLines.length, newLines.length);
+    for (let i = 0; i < max; i++) {
+      const o = oldLines[i];
+      const n = newLines[i];
+      if (o === n) {
+        if (o !== undefined) out.push('<span class="diff-ctx">  ' + escapeHtml(o) + '</span>');
+      } else {
+        if (o !== undefined && !newSet.has(o)) { out.push('<span class="diff-del">- ' + escapeHtml(o) + '</span>'); removed++; }
+        if (n !== undefined && !oldSet.has(n)) { out.push('<span class="diff-add">+ ' + escapeHtml(n) + '</span>'); added++; }
+      }
+    }
+    return { added, removed, html: out.join('\\n') };
+  }
+
+  // Wire form
+  $('#builderForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const prompt = String($('#builderPrompt').value || '').trim();
+    if (!prompt) return;
+    const modeInput = document.querySelector('input[name="builderMode"]:checked');
+    const mode = modeInput ? modeInput.value : 'auto';
+    start(prompt, mode);
+    vscode.postMessage({
+      type: 'runSmartBuilder',
+      text: prompt,
+      builderMode: mode,
+      model: $('#modelSel').value,
+    });
+  });
+
+  $('#builderCancelBtn').addEventListener('click', () => {
+    vscode.postMessage({ type: 'cancelSmartBuilder' });
+    setError('Cancelled by user.');
+  });
+  $('#builderRestartBtn').addEventListener('click', () => {
+    showSection('form');
+    resetProgress();
+  });
+  $('#builderApplyBtn').addEventListener('click', () => {
+    if (!lastFiles.length) return;
+    vscode.postMessage({
+      type: 'applySmartBuild',
+      builderFiles: lastFiles.map(f => ({ path: f.path, content: f.content, kind: f.kind })),
+    });
+  });
+
+  $('#builderFilesList').addEventListener('click', (e) => {
+    const t = e.target.closest('[data-action]');
+    if (!t) return;
+    const action = t.dataset.action;
+    if (action === 'builder-toggle-file') {
+      const card = t.closest('.builder-file-card');
+      if (card) card.classList.toggle('open');
+    } else if (action === 'builder-copy-file') {
+      e.stopPropagation();
+      const idx = parseInt(t.dataset.idx, 10) || 0;
+      const f = lastFiles[idx];
+      if (f) navigator.clipboard?.writeText(f.content || '');
+      const orig = t.textContent; t.textContent = 'Copied'; setTimeout(() => { t.textContent = orig; }, 1200);
+    } else if (action === 'builder-apply-file') {
+      e.stopPropagation();
+      const idx = parseInt(t.dataset.idx, 10) || 0;
+      const f = lastFiles[idx];
+      if (f) vscode.postMessage({ type: 'applySmartBuild', builderFiles: [{ path: f.path, content: f.content, kind: f.kind }] });
+    }
+  });
+
+  return { open, start, setError, onScope, onStep, onPlan, onArchitecture, onReview, onFiles, onComplete };
+})();
+
+/* ============================================================
    MessageView — user / assistant message factory
    ============================================================ */
 const MessageView = {
@@ -736,6 +1017,7 @@ $('#attachBtn').addEventListener('click', () => vscode.postMessage({ type: 'atta
 $('#imageBtn').addEventListener('click', () => $('#imageFileInput').click());
 $('#rulesBtn').addEventListener('click', () => vscode.postMessage({ type: 'openRulesFile' }));
 $('#designBtn').addEventListener('click', () => DesignerView.open());
+$('#builderBtn').addEventListener('click', () => BuilderView.open());
 $('#clearBtn').addEventListener('click', () => {
   if (confirm('Clear ALL chat history?')) vscode.postMessage({ type: 'clearMemory' });
 });
@@ -856,6 +1138,50 @@ window.addEventListener('message', (e) => {
     }
     case 'design_error': {
       DesignerView.error(m.payload && m.payload.message);
+      return;
+    }
+    case 'builder_progress': {
+      const text = (m.payload && (m.payload.message || m.payload)) || '';
+      $('#builderStatusText').textContent = String(text);
+      return;
+    }
+    case 'builder_scope': {
+      BuilderView.onScope(m.payload || {});
+      return;
+    }
+    case 'builder_step': {
+      BuilderView.onStep(m.payload || {});
+      return;
+    }
+    case 'builder_plan': {
+      BuilderView.onPlan(m.payload || {});
+      return;
+    }
+    case 'builder_architecture': {
+      BuilderView.onArchitecture(m.payload || {});
+      return;
+    }
+    case 'builder_files': {
+      BuilderView.onFiles((m.payload && m.payload.files) || m.payload || []);
+      return;
+    }
+    case 'builder_review': {
+      BuilderView.onReview(m.payload || {});
+      return;
+    }
+    case 'builder_complete': {
+      BuilderView.onComplete(m.payload || {});
+      return;
+    }
+    case 'builder_applied': {
+      const p = m.payload || {};
+      const written = (p.written || []).length;
+      StatusIndicator.set('done', 'Applied ' + written + ' file' + (written === 1 ? '' : 's'));
+      setTimeout(() => StatusIndicator.set('idle', ''), 2400);
+      return;
+    }
+    case 'builder_error': {
+      BuilderView.setError(m.payload && (m.payload.message || m.payload));
       return;
     }
     case 'edits_summary': {

@@ -9,6 +9,8 @@ import { renderChatHtml } from "./webview/template";
 import { EditTracker } from "../../core/agent/EditTracker";
 import { HANDOFF_MARKER, VALID_HANDOFF_ROLES } from "../../core/tools/HandOffTool";
 import { UiDesigner, UiDesignSpec } from "../../features/ui-designer/UiDesigner";
+import { SmartBuilderOrchestrator, applySmartBuildFiles } from "../../features/smart-builder/orchestrator";
+import type { BuilderInput, BuilderMode, BuilderRunResult, GeneratedFile } from "../../features/smart-builder/types";
 
 interface AttachedImage {
   /** Stable id for client/server reconciliation. */
@@ -31,13 +33,16 @@ interface InboundMessage {
     | "attachImage" | "detachImage" | "pickImage"
     | "openEditDiff" | "revertEdit" | "revertAllEdits"
     | "openRulesFile" | "createRulesFile"
-    | "runDesign" | "exportDesignCode";
+    | "runDesign" | "exportDesignCode"
+    | "runSmartBuilder" | "applySmartBuild" | "cancelSmartBuilder";
   text?: string; agent?: AgentRole; model?: string; allowed?: boolean;
   approved?: boolean; path?: string; code?: string; sessionId?: string;
   imageId?: string; imageName?: string; imageDataUrl?: string;
   designSpec?: UiDesignSpec;
   designIndex?: number;
   exportFormat?: "react" | "html";
+  builderMode?: BuilderMode;
+  builderFiles?: { path: string; content: string; kind?: "create" | "modify" }[];
 }
 
 type DesignOutboundType =
@@ -46,12 +51,25 @@ type DesignOutboundType =
   | "design_error"
   | "design_export";
 
+type BuilderOutboundType =
+  | "builder_progress"
+  | "builder_scope"
+  | "builder_step"
+  | "builder_plan"
+  | "builder_architecture"
+  | "builder_files"
+  | "builder_review"
+  | "builder_complete"
+  | "builder_applied"
+  | "builder_error";
+
 interface OutboundMessage {
   type:
     | "state" | "user" | "assistant_start" | "assistant_token" | "assistant_end"
     | "step" | "error" | "info" | "permission_request" | "plan_proposal"
     | "session_loaded" | "analytics" | "edits_summary" | "handoff"
-    | DesignOutboundType;
+    | DesignOutboundType
+    | BuilderOutboundType;
   payload?: unknown;
 }
 
@@ -73,6 +91,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
   private uiDesigner!: UiDesigner;
   private currentDesignAbort: AbortController | undefined;
   private workspaceRules: string[] = [];
+  private smartBuilder!: SmartBuilderOrchestrator;
+  private currentBuilderAbort: AbortController | undefined;
+  private lastBuilderResult?: BuilderRunResult;
 
   constructor(private readonly context: vscode.ExtensionContext, private readonly store: ExtensionContextStore) {}
 
@@ -82,6 +103,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     view.webview.html = this.renderHtml(view.webview);
     if (!this.uiDesigner) {
       this.uiDesigner = new UiDesigner(this.store.providerRegistry, this.store.modelManager, this.store.logger);
+    }
+    if (!this.smartBuilder) {
+      this.smartBuilder = new SmartBuilderOrchestrator(this.store.providerRegistry, this.store.modelManager, this.store.logger);
     }
     view.webview.onDidReceiveMessage((msg: InboundMessage) => {
       this.handleMessage(msg).catch(err => this.post({ type: "error", payload: String(err) }));
@@ -242,6 +266,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
         this.post({ type: "info", payload: "Export to code is coming soon." });
         return;
 
+      // ----- Smart Feature Builder -----
+      case "runSmartBuilder":
+        await this.runSmartBuilder(msg.text || "", msg.builderMode || "auto", msg.model);
+        return;
+      case "cancelSmartBuilder":
+        this.currentBuilderAbort?.abort();
+        return;
+      case "applySmartBuild":
+        await this.applySmartBuilderResult(msg.builderFiles);
+        return;
+
       // ----- Workspace rules -----
       case "openRulesFile":
         await this.openRulesFile(msg.text);
@@ -387,6 +422,97 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: "design_error", payload: { message: err?.message || String(err) } });
     } finally {
       if (this.currentDesignAbort === abort) this.currentDesignAbort = undefined;
+    }
+  }
+
+  // ---------- Smart Builder ----------
+
+  private async runSmartBuilder(prompt: string, mode: BuilderMode, modelOverride?: string): Promise<void> {
+    if (!prompt.trim()) {
+      this.post({ type: "builder_error", payload: { message: "Please describe what you want to build." } });
+      return;
+    }
+    if (!this.smartBuilder) {
+      this.smartBuilder = new SmartBuilderOrchestrator(this.store.providerRegistry, this.store.modelManager, this.store.logger);
+    }
+
+    if (modelOverride) {
+      try { this.store.modelManager.setActive(modelOverride); } catch { /* ignore */ }
+    }
+
+    this.currentBuilderAbort?.abort();
+    const abort = new AbortController();
+    this.currentBuilderAbort = abort;
+
+    const ctx = await collectEditorContext(Array.from(this.attachedFiles));
+
+    const input: BuilderInput = {
+      prompt,
+      mode,
+      modelOverride,
+      context: {
+        activeFile: ctx.activeFile,
+        selection: ctx.selection,
+        workspaceSummary: ctx.workspaceSummary,
+        extraFiles: ctx.extraFiles,
+      },
+    };
+
+    try {
+      const result = await this.smartBuilder.run(input, (event) => {
+        switch (event.type) {
+          case "scope":
+            this.post({ type: "builder_scope", payload: event.payload });
+            return;
+          case "step_start":
+          case "step_done":
+          case "step_failed":
+            this.post({ type: "builder_step", payload: { ...event.step, eventType: event.type } });
+            return;
+          case "plan":
+            this.post({ type: "builder_plan", payload: event.payload });
+            return;
+          case "architecture":
+            this.post({ type: "builder_architecture", payload: event.payload });
+            return;
+          case "files":
+            this.post({ type: "builder_files", payload: event.payload });
+            return;
+          case "review":
+            this.post({ type: "builder_review", payload: event.payload });
+            return;
+          case "complete":
+            this.post({ type: "builder_complete", payload: event.payload });
+            return;
+          case "info":
+            this.post({ type: "builder_progress", payload: event.payload });
+            return;
+        }
+      }, abort.signal);
+      this.lastBuilderResult = result;
+    } catch (err: any) {
+      this.store.logger?.error?.(`SmartBuilder failed: ${err?.stack || err?.message || String(err)}`);
+      this.post({ type: "builder_error", payload: { message: err?.message || String(err) } });
+    } finally {
+      if (this.currentBuilderAbort === abort) this.currentBuilderAbort = undefined;
+    }
+  }
+
+  private async applySmartBuilderResult(filesPayload?: { path: string; content: string; kind?: "create" | "modify" }[]): Promise<void> {
+    const files: GeneratedFile[] = (filesPayload && filesPayload.length > 0)
+      ? filesPayload.map(f => ({ path: f.path, content: f.content, kind: f.kind === "modify" ? "modify" : "create" }))
+      : (this.lastBuilderResult?.files || []);
+    if (!files || files.length === 0) {
+      this.post({ type: "builder_error", payload: { message: "No files to apply." } });
+      return;
+    }
+    const result = await applySmartBuildFiles(files);
+    this.post({ type: "builder_applied", payload: result });
+    if (result.written.length > 0) {
+      this.post({ type: "info", payload: `Applied ${result.written.length} file${result.written.length === 1 ? "" : "s"}.` });
+    }
+    if (result.skipped.length > 0) {
+      this.post({ type: "error", payload: `Could not write: ${result.skipped.join(", ")}` });
     }
   }
 

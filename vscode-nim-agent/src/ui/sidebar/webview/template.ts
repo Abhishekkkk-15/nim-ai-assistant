@@ -63,6 +63,7 @@ export function renderChatHtml(webview: vscode.Webview): string {
         <div class="spacer"></div>
         <button id="rulesBtn" class="icon-btn rules-btn" title="Workspace rules" aria-label="Workspace rules" style="width:auto; padding:0 8px; font-size: var(--sz-xs); font-weight:600; letter-spacing:.04em;">RULES</button>
         <button id="designBtn" class="icon-btn design-btn" title="Generate UI design (Figma-style)" aria-label="Design UI" style="width:auto; padding:0 8px; font-size: var(--sz-xs); font-weight:600; letter-spacing:.04em;">DESIGN UI</button>
+        <button id="builderBtn" class="icon-btn builder-btn" title="Smart feature builder (multi-agent)" aria-label="Smart builder" style="width:auto; padding:0 8px; font-size: var(--sz-xs); font-weight:600; letter-spacing:.04em;">BUILD</button>
         <button id="planBtn" class="icon-btn" title="Plan-only mode" aria-label="Plan mode" style="width:auto; padding:0 8px; font-size: var(--sz-xs); font-weight:600; letter-spacing:.04em;">PLAN</button>
         <button id="autoBtn" class="icon-btn" title="Auto-approve tool use" aria-label="Auto-permit" style="width:auto; padding:0 8px; font-size: var(--sz-xs); font-weight:600; letter-spacing:.04em;">AUTO</button>
       </div>
@@ -194,6 +195,62 @@ export function renderChatHtml(webview: vscode.Webview): string {
           <div id="designTabVisual" class="design-tab"></div>
           <div id="designTabTree" class="design-tab" style="display:none"></div>
           <div id="designTabJson" class="design-tab" style="display:none"></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="builderOverlay" class="overlay" role="dialog" aria-label="Smart Feature Builder">
+      <div class="overlay-header">
+        <span><span class="builder-badge">Smart Builder</span> Multi-agent feature builder</span>
+        <button class="icon-btn overlay-close" aria-label="Close">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+        </button>
+      </div>
+      <div id="builderContent" class="overlay-content">
+        <form id="builderForm" class="builder-form" autocomplete="off">
+          <label class="field">
+            <span class="field-label">What do you want to build?</span>
+            <textarea id="builderPrompt" class="field-input" rows="4" placeholder="e.g. Add a login form with email + password validation, or build a dashboard with three stat cards"></textarea>
+          </label>
+          <div class="builder-mode-row">
+            <span class="field-label">Mode</span>
+            <div class="builder-mode-grid">
+              <label class="builder-mode-card"><input type="radio" name="builderMode" value="auto" checked /><span class="bm-title">Auto</span><span class="bm-sub">Detect scope</span></label>
+              <label class="builder-mode-card"><input type="radio" name="builderMode" value="quick" /><span class="bm-title">\u26A1 Quick Fix</span><span class="bm-sub">Coder only</span></label>
+              <label class="builder-mode-card"><input type="radio" name="builderMode" value="build" /><span class="bm-title">\u{1F9E9} Build Feature</span><span class="bm-sub">Plan \u2192 Code \u2192 Wire</span></label>
+              <label class="builder-mode-card"><input type="radio" name="builderMode" value="plan" /><span class="bm-title">\u{1F9E0} Plan First</span><span class="bm-sub">Full pipeline</span></label>
+            </div>
+          </div>
+          <div class="builder-actions">
+            <button type="button" class="btn secondary overlay-close">Cancel</button>
+            <button type="submit" id="builderRunBtn" class="btn">Run</button>
+          </div>
+        </form>
+
+        <div id="builderProgress" class="builder-progress" style="display:none">
+          <div class="builder-status-row">
+            <span class="spinner"></span>
+            <span id="builderStatusText">Starting\u2026</span>
+            <span class="spacer"></span>
+            <button id="builderCancelBtn" class="btn danger" type="button">Stop</button>
+          </div>
+          <div id="builderScopeCard" class="builder-scope-card" style="display:none"></div>
+          <div id="builderStepsList" class="builder-steps-list"></div>
+          <div id="builderPlanBlock" class="builder-block" style="display:none"></div>
+          <div id="builderArchBlock" class="builder-block" style="display:none"></div>
+          <div id="builderReviewBlock" class="builder-block" style="display:none"></div>
+        </div>
+
+        <div id="builderError" class="builder-error" style="display:none"></div>
+
+        <div id="builderResult" class="builder-result" style="display:none">
+          <div class="builder-result-head">
+            <div id="builderResultTitle" class="builder-result-title">Generated changes</div>
+            <span class="spacer"></span>
+            <button id="builderRestartBtn" class="btn secondary" type="button">New build</button>
+            <button id="builderApplyBtn" class="btn primary" type="button">Apply all files</button>
+          </div>
+          <div id="builderFilesList" class="builder-files-list"></div>
         </div>
       </div>
     </section>

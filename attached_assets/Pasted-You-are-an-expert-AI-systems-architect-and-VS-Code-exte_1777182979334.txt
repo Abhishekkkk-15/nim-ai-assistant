@@ -1,0 +1,270 @@
+You are an expert AI systems architect and VS Code extension developer.
+
+Your task is to upgrade my existing AI-powered VS Code extension by implementing a **Smart Feature Builder System with Scope Control and Multi-Agent Collaboration**.
+
+This system must be intelligent enough to:
+
+* Avoid overbuilding
+* Adapt to user intent
+* Use multiple agents collaboratively when needed
+
+---
+
+# 🎯 OBJECTIVE
+
+Build a system that converts user prompts into actions, while **doing the minimum required work** to solve the problem.
+
+---
+
+# ⚠️ CORE PRINCIPLE
+
+👉 "Do NOT over-engineer. Match the scope of the user's intent."
+
+---
+
+# 🧠 PART 1 — SCOPE ANALYZER (CRITICAL)
+
+Before running any agent or feature builder, implement a **Scope Analyzer**.
+
+---
+
+## 📥 Input:
+
+User prompt
+
+---
+
+## 📤 Output (STRICT JSON):
+
+```json
+{
+  "intent": "small | medium | large",
+  "confidence": 0.0-1.0,
+  "reason": "short explanation"
+}
+```
+
+---
+
+## 🎯 Behavior Based on Intent
+
+### 🔹 SMALL (Quick Fix Mode)
+
+Examples:
+
+* "Fix this function"
+* "Add validation"
+
+Action:
+
+* Edit existing code only
+* No new files unless absolutely required
+* No full pipeline
+
+---
+
+### 🔹 MEDIUM (Guided Build Mode)
+
+Examples:
+
+* "Add login UI"
+* "Create API endpoint"
+
+Action:
+
+* Limited planning
+* Few files allowed
+* Use 1–2 agents max
+
+---
+
+### 🔹 LARGE (Full Feature Builder Mode)
+
+Examples:
+
+* "Build authentication system"
+* "Create full dashboard"
+
+Action:
+
+* Trigger full multi-agent pipeline
+* Allow multiple files and architecture decisions
+
+---
+
+# 🧑‍💻 PART 2 — USER MODE CONTROL
+
+Add UI controls:
+
+* ⚡ Quick Fix
+* 🧩 Build Feature
+* 🧠 Plan First
+
+If user selects a mode:
+👉 Override automatic scope detection
+
+---
+
+# 🤖 PART 3 — MULTI-AGENT COLLABORATION SYSTEM
+
+Implement a collaborative agent pipeline.
+
+---
+
+## 🎭 Agents Required
+
+### 1. Planner Agent
+
+* Breaks task into steps
+* Outputs structured plan
+
+---
+
+### 2. Architect Agent
+
+* Decides file structure
+* Maps plan to project
+
+---
+
+### 3. Coder Agent
+
+* Generates code per file
+
+---
+
+### 4. Integrator Agent
+
+* Connects code across files
+* Fixes imports and wiring
+
+---
+
+### 5. Reviewer Agent
+
+* Reviews generated code
+* Suggests improvements
+
+---
+
+### 6. Debugger Agent
+
+* Fixes runtime/syntax errors
+
+---
+
+# 🔁 AGENT EXECUTION FLOW
+
+Based on scope:
+
+---
+
+### SMALL:
+
+User → Coder → Apply
+
+---
+
+### MEDIUM:
+
+User → Planner → Coder → Integrator → Apply
+
+---
+
+### LARGE:
+
+User → Planner → Architect → Coder → Integrator → Reviewer → Debugger → Diff Preview → Apply
+
+---
+
+# 🔍 PART 4 — SAFETY & CONTROL
+
+## Diff System (MANDATORY)
+
+* Show file changes before applying
+* User must approve changes
+
+---
+
+## Constraints:
+
+* Do NOT overwrite entire files unnecessarily
+* Prefer incremental edits
+* Limit file creation based on scope
+
+---
+
+# ⚙️ PART 5 — CONTEXT AWARENESS
+
+Agents must read:
+
+* Current file
+* Selected code
+* Project structure
+
+---
+
+# 🧱 ARCHITECTURE
+
+Add module:
+
+src/features/smart-builder/
+scopeAnalyzer.ts
+planner.ts
+architect.ts
+coder.ts
+integrator.ts
+reviewer.ts
+debugger.ts
+orchestrator.ts
+
+---
+
+# 🎨 UI REQUIREMENTS
+
+* Show detected intent (small/medium/large)
+* Show active mode
+* Show agent execution steps (collapsible)
+* Show progress indicators
+
+---
+
+# 🤖 MODEL USAGE
+
+* Use selected model by default
+* Allow override per agent if needed
+* Support API key rotation
+
+---
+
+# 🔥 BONUS FEATURES (OPTIONAL)
+
+* Confidence-based confirmation (ask user if unsure)
+* Retry failed agent with fallback model
+* Agent logs panel (debug view)
+
+---
+
+# 📦 OUTPUT REQUIREMENTS
+
+Provide:
+
+1. Scope Analyzer implementation
+2. Multi-agent system design
+3. Agent orchestration logic
+4. Mode switching logic
+5. Diff preview system
+6. Example flows (small, medium, large)
+
+---
+
+# ⚠️ IMPORTANT
+
+* Keep code modular and scalable
+* Use TypeScript properly
+* Avoid hardcoding
+* Do NOT break existing features
+
+---
+
+Start by implementing Scope Analyzer and mode control, then build the multi-agent system step-by-step.
