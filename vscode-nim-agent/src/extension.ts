@@ -29,6 +29,7 @@ import { GoToDefinitionTool } from "./core/tools/GoToDefinitionTool";
 import { FindReferencesTool } from "./core/tools/FindReferencesTool";
 import { GetFileExportsTool } from "./core/tools/GetFileExportsTool";
 import { GlobFilesTool } from "./core/tools/GlobFilesTool";
+import { MultiReplaceFileContentTool } from "./core/tools/MultiReplaceFileContentTool";
 import { ConversationMemory } from "./core/memory/ConversationMemory";
 import { LocalCache } from "./core/memory/LocalCache";
 import { AgentRegistry } from "./core/agent/AgentRegistry";
@@ -131,6 +132,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   toolRegistry.register(new GitManagerTool());
   toolRegistry.register(new ReplaceInFileTool());
   toolRegistry.register(new ReplaceFileContentTool());
+  toolRegistry.register(new MultiReplaceFileContentTool());
   toolRegistry.register(new GetDiagnosticsTool());
   toolRegistry.register(new ApplyWorkspaceEditTool());
   toolRegistry.register(new SemanticSearchTool(vectorIndex));

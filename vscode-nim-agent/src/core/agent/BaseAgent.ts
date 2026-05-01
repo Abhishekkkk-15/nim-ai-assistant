@@ -188,7 +188,11 @@ export abstract class BaseAgent {
 
       if (actions.length > 0) {
         let hasTool = false;
-        const toolPromises = actions.map(async (action) => {
+        let anyWriteToolSucceeded = false;
+
+        // SEQUENTIAL EXECUTION GUARDRAIL: Iterate through actions one by one
+        // to prevent race conditions on file edits and cascading failures.
+        for (const action of actions) {
           if (action.tool) {
             hasTool = true;
             const toolName = action.tool.name;
@@ -197,7 +201,8 @@ export abstract class BaseAgent {
             const toolDef = this.store.toolRegistry.get(toolName)?.definition();
             if (this.allowedTools() && !this.allowedTools()!.includes(toolName)) {
               const denied = `Tool "${toolName}" is not allowed for the ${this.role} agent.`;
-              return { toolName, result: { ok: false, output: denied } };
+              messages.push({ role: "user", content: this.toolResultPrompt(toolName, { ok: false, output: denied }) });
+              continue;
             }
 
             // Permission check
@@ -205,7 +210,8 @@ export abstract class BaseAgent {
               const allowed = await input.onPermissionRequest(toolName, toolInput);
               if (!allowed) {
                 const denied = `User denied permission to execute ${toolName}.`;
-                return { toolName, result: { ok: false, output: denied } };
+                messages.push({ role: "user", content: this.toolResultPrompt(toolName, { ok: false, output: denied }) });
+                continue;
               }
             }
 
@@ -218,39 +224,38 @@ export abstract class BaseAgent {
               toolInput,
               retryOnToolFailure ? toolRetryBudget : 0
             );
-            return { toolName, result };
-          }
-          return null;
-        });
 
-        const results = (await Promise.all(toolPromises)).filter(r => r !== null) as { toolName: string; result: ToolResult }[];
-        
-        for (const res of results) {
-          const toolResultStep: AgentStep = { type: "tool_result", name: res.toolName, payload: res.result.output };
-          steps.push(toolResultStep);
-          input.onStep?.(toolResultStep);
-          messages.push({ role: "user", content: this.toolResultPrompt(res.toolName, res.result) });
-          
-          if (res.result.terminal) {
-             finalContent = res.result.output;
-             return { content: finalContent, steps, usage: { promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens, totalTokens: totalPromptTokens + totalCompletionTokens } };
-          }
-
-          if (verifyAfterEdit && res.result.ok && this.isWriteTool(res.toolName)) {
-            const verificationResults = await this.runVerificationPipeline();
-            for (const verification of verificationResults) {
-              const verifyStep: AgentStep = {
-                type: "tool_result",
-                name: verification.name,
-                payload: verification.result.output,
-              };
-              steps.push(verifyStep);
-              input.onStep?.(verifyStep);
-              messages.push({
-                role: "user",
-                content: this.toolResultPrompt(verification.name, verification.result),
-              });
+            const toolResultStep: AgentStep = { type: "tool_result", name: toolName, payload: result.output };
+            steps.push(toolResultStep);
+            input.onStep?.(toolResultStep);
+            messages.push({ role: "user", content: this.toolResultPrompt(toolName, result) });
+            
+            if (result.ok && this.isWriteTool(toolName)) {
+              anyWriteToolSucceeded = true;
             }
+
+            if (result.terminal) {
+               finalContent = result.output;
+               return { content: finalContent, steps, usage: { promptTokens: totalPromptTokens, completionTokens: totalCompletionTokens, totalTokens: totalPromptTokens + totalCompletionTokens } };
+            }
+          }
+        }
+
+        // Optimized Verification: Run pipeline once AFTER all tools in this batch are finished.
+        if (verifyAfterEdit && anyWriteToolSucceeded) {
+          const verificationResults = await this.runVerificationPipeline();
+          for (const verification of verificationResults) {
+            const verifyStep: AgentStep = {
+              type: "tool_result",
+              name: verification.name,
+              payload: verification.result.output,
+            };
+            steps.push(verifyStep);
+            input.onStep?.(verifyStep);
+            messages.push({
+              role: "user",
+              content: this.toolResultPrompt(verification.name, verification.result),
+            });
           }
         }
 
