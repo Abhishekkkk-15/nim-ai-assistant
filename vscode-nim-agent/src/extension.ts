@@ -36,6 +36,12 @@ import { ContextManager } from "./core/context/ContextManager";
 import { RulesLoader } from "./core/context/RulesLoader";
 import { HistoryManager } from "./core/memory/HistoryManager";
 import { AnalyticsManager } from "./core/memory/AnalyticsManager";
+import { TreeSitterService } from "./core/context/parsers/TreeSitterService";
+import { MerkleTree } from "./core/context/state/MerkleTree";
+import * as fs from "fs";
+import * as path from "path";
+import { CodeGraphService } from "./core/context/graph/CodeGraphService";
+import { DebuggerTool } from "./core/tools/DebuggerTool";
 import { registerInlineEditCommand } from "./commands/InlineEditCommand";
 import { registerErrorHealer } from "./providers/ErrorHealerProvider";
 import { ChatAssistantAgent } from "./core/agent/ChatAssistantAgent";
@@ -84,6 +90,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const contextManager = new ContextManager(context);
   store.contextManager = contextManager;
 
+  const treeSitter = new TreeSitterService(context);
+  store.treeSitter = treeSitter;
+
+  const merklePath = path.join(context.globalStorageUri.fsPath, "merkle_tree.json");
+  let merkleTree: MerkleTree;
+  if (fs.existsSync(merklePath)) {
+    merkleTree = MerkleTree.deserialize("root", fs.readFileSync(merklePath, "utf8"));
+  } else {
+    merkleTree = new MerkleTree("root");
+  }
+  store.merkleTree = merkleTree;
+
+  const codeGraph = new CodeGraphService(store);
+  store.codeGraph = codeGraph;
+  codeGraph.buildInitialGraph().catch(err => logger.error("Graph build error", err));
+
   const vectorIndex = new VectorIndexService(store);
   store.vectorIndex = vectorIndex;
   // Trigger background indexing
@@ -114,6 +136,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   toolRegistry.register(new SemanticSearchTool(vectorIndex));
   toolRegistry.register(new WebSearchTool());
   toolRegistry.register(new TestRunnerTool());
+  toolRegistry.register(new DebuggerTool());
   toolRegistry.register(new FrameworkScaffoldTool());
   toolRegistry.register(new GoToDefinitionTool());
   toolRegistry.register(new FindReferencesTool());

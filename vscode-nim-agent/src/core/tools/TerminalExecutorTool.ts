@@ -29,12 +29,6 @@ export class TerminalExecutorTool extends BaseTool {
       return { ok: false, output: "Missing 'command' argument." };
     }
 
-    // Show in terminal for user visibility
-    const terminal = this.acquireTerminal(cwd);
-    terminal.show(true);
-    terminal.sendText(`echo "[NIM Agent] Running: ${command.replace(/"/g, '\\"')}"`, true);
-    terminal.sendText(command, true);
-
     return new Promise<ToolResult>((resolve) => {
       const workspaceRoot = vscode.workspace.workspaceFolders?.[0].uri.fsPath;
       cp.exec(command, { cwd: cwd || workspaceRoot }, (error, stdout, stderr) => {
@@ -48,11 +42,4 @@ export class TerminalExecutorTool extends BaseTool {
     });
   }
 
-  private acquireTerminal(cwd?: string): vscode.Terminal {
-    const existing = vscode.window.terminals.find((t) => t.name === TERMINAL_NAME);
-    if (existing && !cwd) {
-      return existing;
-    }
-    return vscode.window.createTerminal({ name: TERMINAL_NAME, cwd });
-  }
 }

@@ -507,16 +507,32 @@ ${ctxBlock}`;
     const outputs: Array<{ name: string; result: ToolResult }> = [];
     const typecheckCommand = this.resolveTypecheckCommand();
     const typecheckResult = await this.store.toolRegistry.execute("run_command", { command: typecheckCommand });
-    outputs.push({ name: "verify_typecheck", result: typecheckResult });
+    
+    // Normalize output to ensure agent understands it's a build check
+    outputs.push({ 
+      name: "BUILD_VERIFICATION", 
+      result: { 
+        ...typecheckResult, 
+        output: `[BUILD CHECK: ${typecheckCommand}]\n${typecheckResult.output}\n\n${typecheckResult.ok ? "✅ Build successful." : "❌ Build FAILED. You must fix the errors before proceeding."}`
+      } 
+    });
+    
     if (!typecheckResult.ok) {
       return outputs;
     }
 
     const testsResult = await this.store.toolRegistry.execute("run_tests", {});
-    outputs.push({ name: "verify_tests", result: testsResult });
+    outputs.push({ 
+      name: "TEST_VERIFICATION", 
+      result: {
+        ...testsResult,
+        output: `[TEST RUN]\n${testsResult.output}\n\n${testsResult.ok ? "✅ All tests passed." : "❌ Tests FAILED. Analyze the failures above and correct the code."}`
+      }
+    });
+
     if (!testsResult.ok) {
       const diagResult = await this.store.toolRegistry.execute("get_diagnostics", { minSeverity: "error" });
-      outputs.push({ name: "verify_diagnostics", result: diagResult });
+      outputs.push({ name: "ERROR_DIAGNOSTICS", result: diagResult });
     }
     return outputs;
   }

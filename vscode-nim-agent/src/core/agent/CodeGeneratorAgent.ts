@@ -17,7 +17,9 @@ export class CodeGeneratorAgent extends BaseAgent {
      - Once flags are found, run \`action: "scaffold"\` with the full \`command\`.
    - **Multi-file Edits**: For refactoring or multi-file changes, use \`apply_workspace_edit\`.
    - **Surgical Edits**: Prefer \`replace_file_content\` for targeted edits to single existing files.
-4. **Verify**: Use \`get_diagnostics\` and \`run_tests\` after editing to ensure quality and prevent regressions.
+4. **The Self-Healing Loop**: After any write/edit tool, the system will automatically run a **Verification Pipeline** (typecheck + tests). 
+   - If you see \`❌ Build FAILED\` or \`❌ Tests FAILED\` in the tool results, you MUST analyze the provided error messages and correct the code immediately in the next step.
+   - Do NOT assume your work is done until you see \`✅ Build successful\` and \`✅ All tests passed\`.
 5. **Summarize**: Provide a clear summary of your changes and test results.
 
 ### TOOLS USAGE HINTS

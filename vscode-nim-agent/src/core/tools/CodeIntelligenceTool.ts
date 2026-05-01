@@ -53,21 +53,28 @@ export class CodeIntelligenceTool extends BaseTool {
         };
       } 
       
-      if (action === "get_definitions" || action === "get_references") {
+      const LSP_ACTIONS: Record<string, string> = {
+        "get_definitions": "vscode.executeDefinitionProvider",
+        "get_references": "vscode.executeReferenceProvider",
+        "get_type_definitions": "vscode.executeTypeDefinitionProvider",
+        "get_implementations": "vscode.executeImplementationProvider"
+      };
+
+      if (LSP_ACTIONS[action]) {
         const filePath = String(input.path || "");
         const line = Number(input.line || 1) - 1;
         const character = Number(input.character || 1) - 1;
 
-        if (!filePath) return { ok: false, output: "Missing 'path' for definition/reference search." };
+        if (!filePath) return { ok: false, output: `Missing 'path' for ${action}.` };
 
-        const uri = vscode.Uri.file(pathIsAbsolute(filePath) ? filePath : vscode.Uri.joinPath(vscode.workspace.workspaceFolders![0].uri, filePath).fsPath);
+        const uri = this.resolveUri(filePath);
         const pos = new vscode.Position(line, character);
 
-        const command = action === "get_definitions" ? "vscode.executeDefinitionProvider" : "vscode.executeReferenceProvider";
+        const command = LSP_ACTIONS[action];
         const locations = await vscode.commands.executeCommand<(vscode.Location | vscode.LocationLink)[]>(command, uri, pos);
 
         if (!locations || locations.length === 0) {
-          return { ok: true, output: `No ${action === "get_definitions" ? "definitions" : "references"} found at L${line + 1}:${character + 1} in ${filePath}.` };
+          return { ok: true, output: `No ${action.replace("get_", "")} found at L${line + 1}:${character + 1} in ${filePath}.` };
         }
 
         const results = locations.map(loc => {
@@ -75,14 +82,14 @@ export class CodeIntelligenceTool extends BaseTool {
           return `${vscode.workspace.asRelativePath(l.uri)} (Line ${l.range.start.line + 1})`;
         });
 
-        return { ok: true, output: `Found ${locations.length} results:\n${results.join("\n")}` };
+        return { ok: true, output: `Found ${locations.length} ${action.replace("get_", "")}:\n${results.join("\n")}` };
       }
 
       if (action === "list_file_symbols") {
         const filePath = String(input.path || "");
         if (!filePath) return { ok: false, output: "Missing 'path' for file symbol listing." };
 
-        const uri = vscode.Uri.file(pathIsAbsolute(filePath) ? filePath : vscode.Uri.joinPath(vscode.workspace.workspaceFolders![0].uri, filePath).fsPath);
+        const uri = this.resolveUri(filePath);
         const symbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
           "vscode.executeDocumentSymbolProvider",
           uri
@@ -112,6 +119,12 @@ export class CodeIntelligenceTool extends BaseTool {
     } catch (err) {
       return { ok: false, output: `Code intelligence failed: ${(err as Error).message}` };
     }
+  }
+
+  private resolveUri(filePath: string): vscode.Uri {
+    if (filePath.startsWith("/") || /^[a-zA-Z]:/.test(filePath)) return vscode.Uri.file(filePath);
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri;
+    return root ? vscode.Uri.joinPath(root, filePath) : vscode.Uri.file(filePath);
   }
 }
 

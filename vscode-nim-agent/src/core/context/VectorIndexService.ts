@@ -5,8 +5,9 @@ import { LocalVectorStore, type VectorChunkEntry } from "./LocalVectorStore";
 
 const SUPPORTED_GLOB = "**/*.{ts,tsx,js,jsx,mjs,cjs,py,go,java,c,cpp,h,md,rs,rb,php,cs}";
 const EXCLUDED_GLOB = "**/{node_modules,dist,.git,.next,.cache,build,out,coverage}/**";
-const CHUNK_LINES = 200;
-const CHUNK_OVERLAP = 20;
+const CHUNK_LINES = 100; // Reduced for AST blocks
+const CHUNK_OVERLAP = 10;
+import * as fs from "fs";
 
 export class VectorIndexService {
   private readonly vectorStore: LocalVectorStore;
@@ -34,6 +35,11 @@ export class VectorIndexService {
         await this.indexFile(file);
       }
       this.vectorStore.save();
+      
+      // Save Merkle Tree
+      const merklePath = path.join(this.store.context.globalStorageUri.fsPath, "merkle_tree.json");
+      fs.writeFileSync(merklePath, this.store.merkleTree.serialize(), "utf8");
+
       this.ready = true;
       this.store.logger.info(
         `Indexing complete. ${this.vectorStore.size()} chunks indexed across ${this.indexedFiles} files.`
@@ -47,19 +53,44 @@ export class VectorIndexService {
 
   private async indexFile(uri: vscode.Uri) {
     const relPath = vscode.workspace.asRelativePath(uri);
-    const stats = await vscode.workspace.fs.stat(uri);
+    const content = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString("utf8");
 
-    // Check if already indexed and up to date
-    const existing = this.vectorStore.all().filter((e) => e.path === relPath);
-    if (existing.length > 0 && existing[0].lastModified >= stats.mtime) {
+    // Check if hash changed via Merkle Tree
+    const parts = relPath.split(/[\\/]/);
+    let node = this.store.merkleTree.getRoot();
+    let oldHash = "";
+    for (const part of parts) {
+      if (node.children?.[part]) {
+        node = node.children[part];
+      } else {
+        node = undefined as any;
+        break;
+      }
+    }
+    if (node) oldHash = node.hash;
+
+    this.store.merkleTree.updateFile(relPath, content);
+    const newHash = this.store.merkleTree.getRoot().hash; // This is not correct for individual file, but updateFile recalculates the whole tree.
+
+    // Better: Get the new hash for this specific file
+    let newNode = this.store.merkleTree.getRoot();
+    for (const part of parts) { newNode = newNode.children![part]; }
+    const fileHash = newNode.hash;
+
+    if (oldHash === fileHash && this.vectorStore.all().some(e => e.path === relPath)) {
       return;
     }
 
     // Remove old entries
     this.vectorStore.removeByPath(relPath);
 
-    const content = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString("utf8");
-    const chunks = this.chunkText(relPath, content);
+    const stats = await vscode.workspace.fs.stat(uri);
+    const blocks = await this.store.treeSitter.getBlocks(content, this.inferLanguage(relPath));
+    const chunks = blocks.map(b => ({
+      chunk: `File: ${relPath}\nBlock: ${b.name} (${b.type})\nLines: ${b.startLine}-${b.endLine}\n\n${b.content}`,
+      startLine: b.startLine,
+      endLine: b.endLine
+    }));
 
     if (chunks.length === 0) return;
 
@@ -124,9 +155,31 @@ export class VectorIndexService {
       score: this.cosineSimilarity(queryEmbedding, entry.embedding),
     }));
 
-    return results
-      .sort((a, b) => b.score - a.score)
-      .slice(0, limit);
+    const sorted = results.sort((a, b) => b.score - a.score).slice(0, limit);
+
+    // Expand results via Code Graph (Feature 4)
+    if (this.store.codeGraph) {
+      const related: typeof sorted = [];
+      for (const res of sorted) {
+        if (res.score > 0.8) {
+          const nodes = this.store.codeGraph.getRelatedNodes(res.path);
+          for (const node of nodes) {
+            if (!sorted.some(s => s.path === node.path) && !related.some(r => r.path === node.path)) {
+              related.push({
+                path: node.path,
+                chunk: `[Related via Graph] ${node.name}`,
+                startLine: 1,
+                endLine: 1,
+                score: res.score * 0.9 // Slightly lower score for indirect hits
+              });
+            }
+          }
+        }
+      }
+      sorted.push(...related.slice(0, 3));
+    }
+
+    return sorted.sort((a, b) => b.score - a.score).slice(0, limit);
   }
 
   status(): { isReady: boolean; isIndexing: boolean; indexedChunks: number; indexedFiles: number; failedFiles: number; lastUpdated: number } {

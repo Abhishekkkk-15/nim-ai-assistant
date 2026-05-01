@@ -453,6 +453,9 @@ importers:
       axios:
         specifier: ^1.7.9
         version: 1.15.2
+      web-tree-sitter:
+        specifier: ^0.26.8
+        version: 0.26.8
     devDependencies:
       '@types/node':
         specifier: ^20.11.0
@@ -3738,6 +3741,9 @@ packages:
         optional: true
       yaml:
         optional: true
+
+  web-tree-sitter@0.26.8:
+    resolution: {integrity: sha512-4sUwi7ZyOrIk5KLgYLkc2A/F0LFMQnBhfb+2Cdl7ik4ePJ6JD+fk4ofI2sA5eGawBKBaK4Vntt7Ww5KcEsay4A==}
 
   whatwg-encoding@3.1.1:
     resolution: {integrity: sha512-6qN4hJdMwfYBtE3YBTTHhoeuUrDBPZmbQaxWAqSALV/MeEnR5z1xd8UKud2RAkFoPkmB+hli1TZSnyi84xz1vQ==}
@@ -7262,6 +7268,8 @@ snapshots:
       lightningcss: 1.31.1
       tsx: 4.21.0
       yaml: 2.8.2
+
+  web-tree-sitter@0.26.8: {}
 
   whatwg-encoding@3.1.1:
     dependencies:

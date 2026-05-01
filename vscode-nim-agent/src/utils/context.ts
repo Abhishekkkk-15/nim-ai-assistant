@@ -13,6 +13,9 @@ import type { VectorIndexService } from "../core/context/VectorIndexService";
 import type { RulesLoader } from "../core/context/RulesLoader";
 import type { HistoryManager } from "../core/memory/HistoryManager";
 import { AnalyticsManager } from "../core/memory/AnalyticsManager";
+import type { TreeSitterService } from "../core/context/parsers/TreeSitterService";
+import type { MerkleTree } from "../core/context/state/MerkleTree";
+import type { CodeGraphService } from "../core/context/graph/CodeGraphService";
 
 /**
  * Lightweight DI container shared across modules.
@@ -34,4 +37,7 @@ export class ExtensionContextStore {
   rulesLoader!: RulesLoader;
   historyManager!: HistoryManager;
   analyticsManager!: AnalyticsManager;
+  treeSitter!: TreeSitterService;
+  merkleTree!: MerkleTree;
+  codeGraph!: CodeGraphService;
 }

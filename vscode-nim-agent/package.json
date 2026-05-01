@@ -205,16 +205,35 @@
         "nimAgent.models": {
           "type": "array",
           "default": [
-            { "name": "meta/llama-3.1-70b-instruct", "providerId": "nvidia-nim", "enabled": true },
-            { "name": "mistralai/mistral-large", "providerId": "nvidia-nim", "enabled": true },
-            { "name": "meta/llama-3.1-8b-instruct", "providerId": "nvidia-nim", "enabled": true }
+            {
+              "name": "meta/llama-3.1-70b-instruct",
+              "providerId": "nvidia-nim",
+              "enabled": true
+            },
+            {
+              "name": "mistralai/mistral-large",
+              "providerId": "nvidia-nim",
+              "enabled": true
+            },
+            {
+              "name": "meta/llama-3.1-8b-instruct",
+              "providerId": "nvidia-nim",
+              "enabled": true
+            }
           ],
           "items": {
             "type": "object",
             "properties": {
-              "name": { "type": "string" },
-              "providerId": { "type": "string", "default": "nvidia-nim" },
-              "enabled": { "type": "boolean" }
+              "name": {
+                "type": "string"
+              },
+              "providerId": {
+                "type": "string",
+                "default": "nvidia-nim"
+              },
+              "enabled": {
+                "type": "boolean"
+              }
             }
           },
           "description": "List of available models mapped to their respective providers."
@@ -227,7 +246,14 @@
         "nimAgent.defaultAgent": {
           "type": "string",
           "default": "chat",
-          "enum": ["chat", "coder", "debugger", "refactor", "supervisor", "reviewer"],
+          "enum": [
+            "chat",
+            "coder",
+            "debugger",
+            "refactor",
+            "supervisor",
+            "reviewer"
+          ],
           "description": "Default agent role."
         },
         "nimAgent.maxAgentSteps": {
@@ -318,6 +344,7 @@
     "typescript": "~5.9.2"
   },
   "dependencies": {
-    "axios": "^1.7.9"
+    "axios": "^1.7.9",
+    "web-tree-sitter": "^0.26.8"
   }
 }
